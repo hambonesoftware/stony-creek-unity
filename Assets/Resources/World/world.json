@@ -1,0 +1,90 @@
+{
+ "width": 6540.057303096638,
+ "depth": 9223.955999999824,
+ "terrainHeight": 110.0,
+ "datum": 206,
+ "bounds": {
+  "west": -83.125,
+  "south": 42.704,
+  "east": -83.045,
+  "north": 42.787
+ },
+ "places": [
+  {
+   "name": "Nature Center trails",
+   "x": 4128.4,
+   "z": 6310.1
+  },
+  {
+   "name": "Eastwood Beach",
+   "x": 3842.3,
+   "z": 2000.4
+  },
+  {
+   "name": "Baypoint Beach",
+   "x": 2809.0,
+   "z": 2711.6
+  },
+  {
+   "name": "Shelden Trails",
+   "x": 1455.2,
+   "z": 2940.6
+  },
+  {
+   "name": "Trolley Trails",
+   "x": 3760.5,
+   "z": 1581.4
+  }
+ ],
+ "landmarks": [
+  {
+   "name": "Baypoint Beach",
+   "x": 3047.8,
+   "z": 3202.5
+  },
+  {
+   "name": "Pebble Beach Drive",
+   "x": 372.1,
+   "z": 6158.0
+  },
+  {
+   "name": "Stony Creek Nature Center",
+   "x": 4087.7,
+   "z": 6323.2
+  },
+  {
+   "name": "Eastwood Beach",
+   "x": 3411.7,
+   "z": 2375.7
+  },
+  {
+   "name": "Baypoint Beach",
+   "x": 2724.8,
+   "z": 2803.6
+  },
+  {
+   "name": "Baypoint Beach Picnic Shelter (I)",
+   "x": 3032.4,
+   "z": 2948.6
+  },
+  {
+   "name": "Beach-Coaster Connector",
+   "x": 1176.4,
+   "z": 2537.3
+  }
+ ],
+ "mapWidth": 2048,
+ "mapHeight": 2888,
+ "mapMetersPerPixel": 3.1933873550276552,
+ "speciesCounts": {
+  "oak": 71874,
+  "maple": 98810,
+  "birch": 33760,
+  "pine": 35424
+ },
+ "sources": [
+  "USGS 3DEP ImageServer (real elevation, meters)",
+  "\u00a9 OpenStreetMap contributors, Open Database License",
+  "USGS Annual NLCD 2024 land cover (Esri image service)"
+ ]
+}

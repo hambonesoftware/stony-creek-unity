@@ -1,0 +1,25 @@
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Bb]uilds/
+.vs/
+.idea/
+*.csproj
+*.sln
+*.user
+*.pidb
+*.pdb
+*.mdb
+*.log
+/Assets/Generated/*.meta.tmp
+/web-*.log
+/test-results/
+/node_modules/
+
+# rebuilt by Stony Creek > Build World (StonyWorldBuilder)
+/Assets/Generated/
+/Assets/Generated.meta
+/Assets/Scenes/
+/Assets/Scenes.meta

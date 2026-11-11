@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#10201a">
+<meta name="description" content="Walk Stony Creek Metropark in Unity: real USGS elevation, OpenStreetMap trails and lakes, USGS land cover, with a GTA-style radar and map.">
+<title>Stony Creek Explorer · Unity</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath d='M32 4 12 40h14l-8 14h28l-8-14h14z' fill='%234f8a4a'/%3E%3Crect x='29' y='52' width='6' height='10' fill='%23674b32'/%3E%3C/svg%3E">
+<style>
+  :root{color-scheme:dark;background:#10201a;color:#eef3ea;font:15px system-ui,-apple-system,Segoe UI,sans-serif}
+  html,body{margin:0;height:100%;overflow:hidden;background:#10201a;overscroll-behavior:none}
+  #unity-canvas{position:fixed;inset:0;width:100vw;height:100vh;height:100dvh;display:block;touch-action:none;outline:none;background:#a9bfc6}
+  .loading{position:fixed;inset:0;display:grid;place-content:center;gap:14px;text-align:center;padding:24px;background:linear-gradient(160deg,#0f241b,#1b3a2b)}
+  .loading[hidden]{display:none}
+  .loading h1{margin:0;font-size:clamp(28px,6vw,46px);letter-spacing:-.02em}
+  .loading p{margin:0;color:#bcd0bf;max-width:520px;line-height:1.5}
+  .bar{width:min(320px,70vw);height:8px;margin:6px auto 0;border-radius:8px;background:#ffffff22;overflow:hidden}
+  .bar i{display:block;height:100%;width:0;background:#cfe3b6;transition:width .2s}
+  .credit{position:fixed;right:10px;bottom:6px;font-size:11px;color:#ffffffaa;pointer-events:none;text-shadow:0 1px 2px #000}
+  .credit a{pointer-events:auto;color:#e7f0c8}
+  .err{color:#ffd2c4}
+</style>
+</head>
+<body>
+<canvas id="unity-canvas" tabindex="0" aria-label="First-person view of Stony Creek Metropark. WASD to walk, drag to look, M for the map."></canvas>
+<div class="loading" id="loading" role="status">
+  <h1>Stony Creek</h1>
+  <p id="loading-text">Loading the park: real terrain, trails, lakes and about 240,000 trees…</p>
+  <div class="bar"><i id="bar"></i></div>
+</div>
+<div class="credit">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> · USGS · <a href="https://github.com/hambonesoftware/stony-creek-unity" target="_blank" rel="noopener">source</a></div>
+<script>
+const canvas = document.getElementById("unity-canvas");
+const bar = document.getElementById("bar");
+const loading = document.getElementById("loading");
+const loader = document.createElement("script");
+loader.src = "Build/{{{ LOADER_FILENAME }}}";
+function fail(msg) {
+  const t = document.getElementById("loading-text");
+  t.textContent = msg || "The park could not load. It needs a WebGL 2 browser.";
+  t.className = "err";
+}
+loader.onerror = () => fail();
+loader.onload = () => {
+  createUnityInstance(canvas, {
+    dataUrl: "Build/{{{ DATA_FILENAME }}}",
+    frameworkUrl: "Build/{{{ FRAMEWORK_FILENAME }}}",
+    codeUrl: "Build/{{{ CODE_FILENAME }}}",
+    streamingAssetsUrl: "StreamingAssets",
+    companyName: {{{ JSON.stringify(COMPANY_NAME) }}},
+    productName: {{{ JSON.stringify(PRODUCT_NAME) }}},
+    productVersion: {{{ JSON.stringify(PRODUCT_VERSION) }}},
+    devicePixelRatio: Math.min(window.devicePixelRatio || 1, matchMedia("(pointer: coarse)").matches ? 1.5 : 1.75),
+    matchWebGLToCanvasSize: true
+  }, p => { bar.style.width = Math.round(p * 100) + "%"; }).then(instance => {
+    window.unityInstance = instance;
+    loading.hidden = true;
+    canvas.focus({ preventScroll: true });
+  }).catch(e => { console.error(e); fail(String(e)); });
+};
+canvas.addEventListener("pointerdown", () => canvas.focus({ preventScroll: true }));
+document.addEventListener("contextmenu", e => e.preventDefault());
+document.body.appendChild(loader);
+</script>
+</body>
+</html>

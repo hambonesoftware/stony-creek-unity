@@ -1,0 +1,12 @@
+{
+  "name": "stony-creek-unity",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "serve": "node test/serve.mjs",
+    "test": "node test/trial.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.49.1"
+  }
+}

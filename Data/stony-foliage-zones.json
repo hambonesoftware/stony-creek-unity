@@ -1,0 +1,230 @@
+{
+  "version": 2,
+  "units": "All lengths meters; object counts are deterministic candidate budgets inside each zone, not actual surveyed vegetation counts.",
+  "provenance": {
+    "habitat": "OSM habitat polygons augmented by artistic defaults; park does not provide tree-by-tree inventory",
+    "rules": "Art direction estimates informed by official Huron-Clinton Metroparks nature center and park maps",
+    "natureCenter": "https://www.metroparks.com/stony-creek-metropark/stony-creek-metropark-nature-center/",
+    "parkMap": "https://www.metroparks.com/wp-content/uploads/2024/04/2024StonyCreekParkMap.pdf",
+    "osm": "https://www.openstreetmap.org/copyright"
+  },
+  "biomes": {
+    "forest": {
+      "treeDensity": 1,
+      "shrubDensity": 0.82,
+      "grassDensity": 0.44,
+      "flowerDensity": 0.08
+    },
+    "mixed": {
+      "treeDensity": 0.78,
+      "shrubDensity": 0.62,
+      "grassDensity": 0.72,
+      "flowerDensity": 0.27
+    },
+    "meadow": {
+      "treeDensity": 0.07,
+      "shrubDensity": 0.12,
+      "grassDensity": 1,
+      "flowerDensity": 0.8
+    },
+    "grassland": {
+      "treeDensity": 0.06,
+      "shrubDensity": 0.1,
+      "grassDensity": 1,
+      "flowerDensity": 0.87
+    },
+    "wetland": {
+      "treeDensity": 0.035,
+      "shrubDensity": 0.26,
+      "grassDensity": 0.6,
+      "flowerDensity": 0.14
+    },
+    "trail-edge": {
+      "treeDensity": 0.22,
+      "shrubDensity": 0.34,
+      "grassDensity": 0.74,
+      "flowerDensity": 0.4
+    },
+    "water": {
+      "treeDensity": 0,
+      "shrubDensity": 0,
+      "grassDensity": 0,
+      "flowerDensity": 0
+    },
+    "steep": {
+      "treeDensity": 0,
+      "shrubDensity": 0,
+      "grassDensity": 0,
+      "flowerDensity": 0
+    }
+  },
+  "zones": [
+    {
+      "id": "nature",
+      "name": "Nature Center / Reflection, Habitat and Landscape Trails",
+      "center": {
+        "lat": 42.76078,
+        "lon": -83.0745
+      },
+      "radiusMeters": 480,
+      "defaultBiome": "mixed",
+      "treeCandidates": 2550,
+      "shrubClumps": 640,
+      "lowBrush": 520,
+      "wildflowers": 600,
+      "mushrooms": 210,
+      "grassClumps": 14500,
+      "treeWeights": {
+        "oak": 35,
+        "maple": 34,
+        "birch": 12,
+        "pine": 11,
+        "hickory": 8
+      },
+      "trailClearanceMeters": {
+        "tree": 5.5,
+        "shrub": 2.5,
+        "ground": 1.55
+      },
+      "visualNotes": "Hardwood forest and wet meadow/old-field transitions; damp pond margins remain open, with compacted soil and gravel trails"
+    },
+    {
+      "id": "shelden",
+      "name": "Shelden Trails / Mt. Shelden Pines",
+      "center": {
+        "lat": 42.73046,
+        "lon": -83.1072
+      },
+      "radiusMeters": 535,
+      "defaultBiome": "forest",
+      "treeCandidates": 2350,
+      "shrubClumps": 550,
+      "lowBrush": 450,
+      "wildflowers": 240,
+      "mushrooms": 190,
+      "grassClumps": 12000,
+      "treeWeights": {
+        "oak": 27,
+        "maple": 23,
+        "birch": 10,
+        "pine": 32,
+        "hickory": 8
+      },
+      "trailClearanceMeters": {
+        "tree": 6.2,
+        "shrub": 3.1,
+        "ground": 1.75
+      },
+      "visualNotes": "Mixed woodland on glacial relief, visibly more pine and woodland understory; mountain-bike and rustic trail corridor kept clear"
+    },
+    {
+      "id": "eastwood",
+      "name": "Eastwood Beach approaches",
+      "center": {
+        "lat": 42.722,
+        "lon": -83.078
+      },
+      "radiusMeters": 410,
+      "defaultBiome": "meadow",
+      "treeCandidates": 950,
+      "shrubClumps": 180,
+      "lowBrush": 290,
+      "wildflowers": 470,
+      "mushrooms": 15,
+      "grassClumps": 9400,
+      "treeWeights": {
+        "oak": 33,
+        "maple": 23,
+        "birch": 14,
+        "pine": 26,
+        "hickory": 4
+      },
+      "trailClearanceMeters": {
+        "tree": 9,
+        "shrub": 4,
+        "ground": 2.5
+      },
+      "visualNotes": "Open recreational lawns and shoreline sightlines; tall vegetation away from beach and paved approaches"
+    },
+    {
+      "id": "baypoint",
+      "name": "Baypoint Beach / lakeside green",
+      "center": {
+        "lat": 42.7284,
+        "lon": -83.09064
+      },
+      "radiusMeters": 430,
+      "defaultBiome": "meadow",
+      "treeCandidates": 800,
+      "shrubClumps": 150,
+      "lowBrush": 250,
+      "wildflowers": 370,
+      "mushrooms": 15,
+      "grassClumps": 8300,
+      "treeWeights": {
+        "oak": 34,
+        "maple": 27,
+        "birch": 12,
+        "pine": 21,
+        "hickory": 6
+      },
+      "trailClearanceMeters": {
+        "tree": 9,
+        "shrub": 4.5,
+        "ground": 2.8
+      },
+      "visualNotes": "Spaced shade trees, maintained open grass and lake visibility; minimal deep-forest undergrowth near developed recreation space"
+    },
+    {
+      "id": "trolley",
+      "name": "Trolley Trails corridor",
+      "center": {
+        "lat": 42.71823,
+        "lon": -83.079
+      },
+      "radiusMeters": 420,
+      "defaultBiome": "mixed",
+      "treeCandidates": 1400,
+      "shrubClumps": 355,
+      "lowBrush": 420,
+      "wildflowers": 280,
+      "mushrooms": 75,
+      "grassClumps": 10500,
+      "treeWeights": {
+        "oak": 33,
+        "maple": 29,
+        "birch": 11,
+        "pine": 18,
+        "hickory": 9
+      },
+      "trailClearanceMeters": {
+        "tree": 7,
+        "shrub": 3.1,
+        "ground": 1.8
+      },
+      "visualNotes": "Defined connected walking corridors with vegetation framing rather than blocking the trail; mixed woodland and meadow patches"
+    }
+  ],
+  "commonRules": {
+    "nearTreeMaxSlope": 0.66,
+    "shrubMaxSlope": 0.82,
+    "minimumSeparationTreeGridMeters": 5.8,
+    "polygonPrecedence": "OSM water > slope > immediate OSM trail edge > OSM habitat polygons > nearest-zone default",
+    "treePositions": "Generated from seeded randomness; not real individual trees",
+    "wildlife": "No wildlife or tree identification based on inferred model geometry"
+  },
+  "targetLOD": {
+    "mobile": {
+      "heroMeters": 64,
+      "midMeters": 195,
+      "farMeters": 335,
+      "heroInstancesPerSpecies": 32
+    },
+    "desktop": {
+      "heroMeters": 88,
+      "midMeters": 245,
+      "farMeters": 465,
+      "heroInstancesPerSpecies": 56
+    }
+  }
+}
