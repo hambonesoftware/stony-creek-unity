@@ -5,6 +5,7 @@ Inputs (Data/):
   stony-creek-map.json       OpenStreetMap paths, water, habitat, landmarks
   stony-foliage-zones.json   sunward's per-area tree mix (art direction)
   nlcd.tif                   USGS Annual NLCD 2024 land cover, 30 m
+  stony-creek-features.json  OpenStreetMap beaches, sand, parking lots, buildings, golf, mown grass, woods
 
 Outputs:
   Data/terrain_heights.r16         1025x1025 uint16, row 0 = south, lakes carved
@@ -61,6 +62,15 @@ def height(x, z):
 osm = json.loads((DATA / "stony-creek-map.json").read_text(encoding="utf-8"))
 zones = json.loads((DATA / "stony-foliage-zones.json").read_text(encoding="utf-8"))
 
+# mapped ground features (Tools/fetch_features.py), projected to metres
+features = []
+for f in json.loads((DATA / "stony-creek-features.json").read_text(encoding="utf-8"))["features"]:
+    pts = np.array([to_xz(lon, lat) for lon, lat in f["coords"][:-1]])
+    if len(pts) >= 3:
+        features.append({"kind": f["kind"], "name": f.get("name", ""), "type": f.get("type", ""), "levels": f.get("levels", 0), "pts": pts})
+MOWN = {"fairway", "green", "tee", "grass", "pitch", "playground"}
+SANDY = {"beach", "sand"}
+
 # ---------- lakes: OSM polygons with a shoreline water level (same rule as sunward) ----------
 lakes = []
 for ring in osm["water"]:
@@ -93,6 +103,19 @@ h = np.where(inside, np.minimum(h, lake_level - 0.9), h)
 grown = ndimage.grey_erosion(np.where(inside, lake_level, 9999.0), size=3)
 ring = (~inside) & (grown < 9000)
 h = np.where(ring, np.minimum(h, grown + 0.15), h)
+# parking lots: graded to a best-fit plane (they are, in reality) so the paved surface sits flush
+gcol, grow = np.meshgrid(np.arange(N) * dem_mpp_x, D - np.arange(N) * dem_mpp_z)
+for f in features:
+    if f["kind"] != "parking":
+        continue
+    img = Image.new("L", (N, N), 0)
+    ImageDraw.Draw(img).polygon([(x / dem_mpp_x, (D - z) / dem_mpp_z) for x, z in f["pts"]], fill=1, outline=1)
+    m = ndimage.binary_dilation(np.array(img) > 0, structure=np.ones((3, 3)), iterations=2) & ~inside
+    if m.sum() < 3:
+        continue
+    A = np.stack([gcol[m], grow[m], np.ones(m.sum())], 1)
+    coef, *_ = np.linalg.lstsq(A, h[m], rcond=None)
+    h[m] = A @ coef
 h = np.clip(h, 0, TERRAIN_H)
 heights16 = np.round(h / TERRAIN_H * 65535).astype("<u2")[::-1]  # row 0 = south for Unity
 heights16.tofile(DATA / "terrain_heights.r16")
@@ -135,7 +158,26 @@ def draw_tree_clear(d, t):
         d.line([t(x, z) for x, z in p["pts"]], fill=255, width=max(1, int(2 * KIND_TREE_CLEAR.get(p["kind"], 5.5) / MPP)), joint="curve")
 
 
+def draw_features(d, t):
+    # later kinds win: mown grass 1, sand 2, parking 3, building 4
+    for value, kinds in ((1, MOWN), (2, SANDY), (3, {"parking"}), (4, {"building"})):
+        for f in features:
+            if f["kind"] in kinds:
+                d.polygon([t(x, z) for x, z in f["pts"]], fill=value)
+
+
+def draw_woods(d, t):
+    for f in features:
+        if f["kind"] == "wood":
+            d.polygon([t(x, z) for x, z in f["pts"]], fill=255)
+
+
+feature_mask = raster(MW, MH, MPP, draw_features)
+wood_mask = raster(MW, MH, MPP, draw_woods) > 0
 water_mask = raster(MW, MH, MPP, draw_water) > 0
+feature_mask[water_mask & (feature_mask != 4)] = 0
+# no trees on or right beside mown grass, sand, parking and buildings
+feature_clear = ndimage.binary_dilation(feature_mask > 0, iterations=2) | ndimage.binary_dilation(feature_mask == 4, iterations=4)
 clear_mask = raster(MW, MH, MPP, draw_tree_clear) > 0
 # keep trees a few metres off the shoreline
 water_buffer = ndimage.binary_dilation(water_mask, iterations=3)
@@ -147,26 +189,25 @@ def mask_at(mask, x, z):
     return mask[r, c]
 
 
-# ---------- terrain splat weights (1024 x 1024 cells over W x D) ----------
-S = 1024
+# ---------- terrain splat weights (2048 x 2048 cells over W x D) ----------
+S = 2048
 gx, gz = np.meshgrid((np.arange(S) + 0.5) / S * W, (1 - (np.arange(S) + 0.5) / S) * D)  # row 0 = north
 cls = landcover(gx, gz)
 lawn = np.isin(cls, list(LAWN)).astype(np.float32)
 meadow = np.isin(cls, list(MEADOW)).astype(np.float32)
 forest = np.isin(cls, list(FOREST)).astype(np.float32)
 sand = np.isin(cls, list(SAND)).astype(np.float32)
-# beaches: sandy shoreline near mapped beach landmarks
-beach_pts = [to_xz(l["lon"], l["lat"]) for l in osm["landmarks"] if "beach" in l["name"].lower()]
-wm = mask_at(water_mask, gx, gz)
-near_water = ndimage.binary_dilation(wm, iterations=3) & ~wm
-near_beach = np.zeros_like(near_water)
-for bx, bz in beach_pts:
-    near_beach |= (gx - bx) ** 2 + (gz - bz) ** 2 < 140 ** 2
-sand = np.maximum(sand, (near_water & near_beach).astype(np.float32))
-noise = ndimage.gaussian_filter(rng.standard_normal((S, S)), 6)
+noise = ndimage.gaussian_filter(rng.standard_normal((S, S)), 12)
 noise = noise / (np.abs(noise).max() + 1e-6)
 weights = np.stack([lawn + 0.25 * np.clip(noise, 0, 1) * meadow, meadow + 0.3 * np.clip(-noise, 0, 1) * lawn, forest, sand * 1.5], -1)
-weights = ndimage.gaussian_filter(weights, sigma=(1.6, 1.6, 0))
+weights = ndimage.gaussian_filter(weights, sigma=(3.2, 3.2, 0))
+# mapped features are exact: sand on the mapped beaches and bunkers, lawn on mown grass, parking and around buildings
+fm = mask_at(feature_mask, gx, gz)
+wd = mask_at(wood_mask, gx, gz) & (fm == 0)
+weights[wd] = (0, 0, 1, 0)
+weights[(fm == 1) | (fm == 3) | (fm == 4)] = (1, 0, 0, 0)
+weights[fm == 2] = (0, 0, 0, 1)
+weights = ndimage.gaussian_filter(weights, sigma=(0.7, 0.7, 0))
 weights[weights.sum(-1) < 1e-4, 0] = 1
 weights /= weights.sum(-1, keepdims=True)
 Image.fromarray(np.round(weights * 255).astype(np.uint8), "RGBA").save(DATA / "splat.png")
@@ -178,8 +219,14 @@ MACRO = {41: (62, 86, 42), 42: (40, 64, 38), 43: (55, 78, 40), 90: (66, 88, 48),
 macro = np.zeros((S, S, 3), np.float32)
 for k, col in MACRO.items():
     macro[cls == k] = col
-macro = ndimage.gaussian_filter(macro, sigma=(1.2, 1.2, 0)) * (1 + 0.08 * noise[..., None])
-Image.fromarray(np.clip(macro, 0, 255).astype(np.uint8), "RGB").save(DATA / "macro.png")
+macro = ndimage.gaussian_filter(macro, sigma=(2.4, 2.4, 0)) * (1 + 0.08 * noise[..., None])
+macro[wd] = (60, 84, 42)
+macro[fm == 1] = (104, 134, 68)
+macro[fm == 2] = (190, 174, 136)
+macro[fm == 3] = (104, 104, 102)
+macro[fm == 4] = (112, 102, 92)
+macro = ndimage.gaussian_filter(macro, sigma=(0.8, 0.8, 0))
+Image.fromarray(np.clip(macro, 0, 255).astype(np.uint8), "RGB").resize((1024, 1024), Image.LANCZOS).save(DATA / "macro.png")
 
 # ---------- trees ----------
 SPECIES = ["oak", "maple", "birch", "pine"]
@@ -201,9 +248,10 @@ clump = ndimage.gaussian_filter(rng.standard_normal((MH // 16 + 1, MW // 16 + 1)
 clump = (clump - clump.mean()) / clump.std()
 cz = np.clip(((D - zs) / (MPP * 16)).astype(int), 0, clump.shape[0] - 1); cx = np.clip((xs / (MPP * 16)).astype(int), 0, clump.shape[1] - 1)
 dens = dens * np.clip(0.75 + 0.35 * clump[cz, cx], 0.15, 1.2)
+dens = np.where(mask_at(wood_mask, xs, zs), np.maximum(dens, 0.95), dens)   # mapped woods are wooded
 hz = height(xs, zs)
 slope = np.hypot(height(xs + 3, zs) - height(xs - 3, zs), height(xs, zs + 3) - height(xs, zs - 3)) / 6
-keep = (rng.random(len(xs)) < dens) & ~mask_at(water_buffer, xs, zs) & ~mask_at(clear_mask, xs, zs) & (slope < 0.75)
+keep = (rng.random(len(xs)) < dens) & ~mask_at(water_buffer, xs, zs) & ~mask_at(clear_mask, xs, zs) & ~mask_at(feature_clear, xs, zs) & (slope < 0.75)
 xs, zs, cl = xs[keep], zs[keep], cl[keep]
 
 zone_pts = [(to_xz(zn["center"]["lon"], zn["center"]["lat"]), zn["radiusMeters"] * 1.6, zn["treeWeights"]) for zn in zones["zones"]]
@@ -255,6 +303,43 @@ with open(OUT / "lakes.bytes", "wb") as f:
 with open(OUT / "landcover.bytes", "wb") as f:
     f.write(struct.pack("<4sHH", b"NLCD", NL_W, NL_H)); f.write(nlcd.astype(np.uint8).tobytes())
 
+# mapped features for the runtime: a 4 m mask (0 none, 1 mown, 2 sand, 3 parking, 4 building) and the outlines
+fmask = feature_mask[::2, ::2]
+with open(OUT / "featuremask.bytes", "wb") as f:
+    f.write(struct.pack("<4sHHf", b"FMSK", fmask.shape[1], fmask.shape[0], MPP * 2)); f.write(fmask.astype(np.uint8).tobytes())
+BTYPE = {"building": 0, "house": 1, "residential": 1, "detached": 1, "garage": 2, "garages": 2, "shed": 2, "shelter": 3, "toilets": 4}
+outlines = [f for f in features if f["kind"] in ("parking", "building")]
+with open(OUT / "features.bytes", "wb") as f:
+    f.write(struct.pack("<4sI", b"FEAT", len(outlines)))
+    for o in outlines:
+        f.write(struct.pack("<BBBH", 3 if o["kind"] == "parking" else 4, BTYPE.get(o["type"], 0), min(o["levels"], 9), len(o["pts"])))
+        f.write(o["pts"].astype("<f4").tobytes())
+
+
+def inner_point(pts, want):
+    """A point inside the outline whose mask value is `want` (centroids can fall outside curved shapes)."""
+    c = pts.mean(0)
+    cand = [c] + [c + (q - c) * k for k in (0.3, 0.6, 0.85) for q in pts[:: max(1, len(pts) // 12)]]
+    for q in cand:
+        if mask_at(feature_mask, q[0], q[1]) == want and not mask_at(water_mask, q[0], q[1]):
+            return q
+    return None
+
+
+def named_points(kind, want, default):
+    out = []
+    for f in features:
+        if f["kind"] != kind:
+            continue
+        q = inner_point(f["pts"], want)
+        if q is not None:
+            out.append({"name": f["name"] or default, "x": round(float(q[0]), 1), "z": round(float(q[1]), 1)})
+    return out
+
+
+parking_pts = named_points("parking", 3, "Parking")
+beach_pts = named_points("beach", 2, "Beach")
+
 # ---------- GTA-style map art (north up, ~3.2 m per pixel) ----------
 MAP_W = 2048; MAP_MPP = W / MAP_W; MAP_H = int(round(D / MAP_MPP))
 SS = 2
@@ -279,6 +364,18 @@ d = ImageDraw.Draw(img)
 tm = lambda x, z: (x / MAP_MPP * SS, (D - z) / MAP_MPP * SS)
 for _, pts in lakes:
     d.polygon([tm(x, z) for x, z in pts], fill=(84, 142, 178), outline=(64, 116, 150))
+FEATURE_COL = {"fairway": (150, 182, 108), "rough": (132, 160, 100), "grass": (148, 176, 108), "pitch": (146, 180, 106), "playground": (176, 170, 128),
+               "tee": (160, 194, 116), "green": (168, 204, 122), "beach": (228, 210, 160), "sand": (228, 210, 160)}
+for order_kinds in (("fairway", "rough", "grass", "pitch", "playground"), ("tee", "green", "beach", "sand")):
+    for f in features:
+        if f["kind"] in order_kinds:
+            d.polygon([tm(x, z) for x, z in f["pts"]], fill=FEATURE_COL[f["kind"]])
+for f in features:
+    if f["kind"] == "parking":
+        d.polygon([tm(x, z) for x, z in f["pts"]], fill=(170, 172, 170), outline=(120, 122, 120))
+for f in features:
+    if f["kind"] == "building":
+        d.polygon([tm(x, z) for x, z in f["pts"]], fill=(128, 108, 92), outline=(92, 76, 64))
 px = 1 / MAP_MPP * SS  # pixels per metre at supersampled scale
 layers = [("track", (122, 96, 64), 2.6), ("path", (122, 96, 64), 2.2), ("footway", (130, 104, 72), 2.2)]
 for kind, col, wm_ in layers:
@@ -315,9 +412,14 @@ world = {
     "width": W, "depth": D, "terrainHeight": TERRAIN_H, "datum": DATUM, "bounds": B,
     "places": [{"name": n, "x": round(to_xz(lon, lat)[0], 1), "z": round(to_xz(lon, lat)[1], 1)} for n, lat, lon in PLACES],
     "landmarks": seen,
+    "parking": parking_pts,
+    "beaches": beach_pts,
     "mapWidth": MAP_W, "mapHeight": MAP_H, "mapMetersPerPixel": MAP_MPP,
     "speciesCounts": counts,
     "sources": [dem_meta["source"], osm["source"], "USGS Annual NLCD 2024 land cover (Esri image service)"],
 }
 (OUT / "world.json").write_text(json.dumps(world, indent=1))
+on_feature = int(np.count_nonzero(mask_at(feature_mask, xs, zs)))
+assert on_feature == 0, f"{on_feature} trees stand on mown grass, sand, parking or buildings"
 print(f"W={W:.0f} D={D:.0f} lakes={len(lakes)} paths={len(paths)} trees={len(xs)} {counts}")
+print(f"features: {len(features)} outlines, parking points {len(parking_pts)}, beaches {[b['name'] for b in beach_pts]}")

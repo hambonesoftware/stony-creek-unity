@@ -18,8 +18,8 @@ Shader "Stony/Terrain"
         _MacroRange ("Macro blend start, end", Vector) = (90, 650, 0, 0)
         _Tint0 ("Lawn tint", Color) = (0.8, 1.02, 0.6, 1)
         _Tint1 ("Meadow tint", Color) = (0.96, 1.0, 0.8, 1)
-        _Tint2 ("Forest tint", Color) = (1, 1, 1, 1)
-        _Tint3 ("Sand tint", Color) = (1, 1, 1, 1)
+        _Tint2 ("Forest tint", Color) = (0.74, 0.8, 0.7, 1)
+        _Tint3 ("Sand tint", Color) = (1.12, 1.34, 1.36, 1)
     }
     SubShader
     {

@@ -30,6 +30,7 @@ namespace StonyCreek.EditorTools
             var terrain = MakeTerrain(info, mats);
             MakeLakes(terrain, mats);
             MakePaths(terrain, mats);
+            MakeLotsAndBuildings(terrain, mats);
             Atmosphere(out var sun);
 
             var camGo = new GameObject("Walker");
@@ -183,6 +184,13 @@ namespace StonyCreek.EditorTools
                 m.SetTexture("_MainTex", Load<Texture2D>($"{Tex}/Ground/road.jpg")); m.SetTexture("_BumpMap", Load<Texture2D>($"{Tex}/Ground/road_n.jpg"));
                 m.SetTexture("_Variation", variation); m.SetFloat("_Edge", 0.08f); m.SetColor("_Color", new Color(1.45f, 1.42f, 1.36f));
             });
+            d["lot"] = Mat("Stony/Path", "ParkingLot", m =>
+            {
+                m.SetTexture("_MainTex", Load<Texture2D>($"{Tex}/Ground/road.jpg")); m.SetTexture("_BumpMap", Load<Texture2D>($"{Tex}/Ground/road_n.jpg"));
+                m.SetTexture("_Variation", variation); m.SetColor("_Color", new Color(0.9f, 0.9f, 0.9f));
+                m.renderQueue = 1950;   // after the terrain, before the trails and roads that cross the lots
+            });
+            d["building"] = Mat("Stony/Building", "Building", m => m.SetTexture("_Variation", variation));
             d["mapView"] = Mat("Stony/MapView", "MapView");
             d["mapOverlay"] = Mat("Stony/MapOverlay", "MapOverlay");
             return d;
@@ -259,6 +267,11 @@ namespace StonyCreek.EditorTools
                     heights[y, x] = (raw[(y * Res + x) * 2] | raw[(y * Res + x) * 2 + 1] << 8) / 65535f;
 
             var td = new TerrainData { heightmapResolution = Res };
+            // The asset must exist before layers and alphamaps are set: Unity stores the painted
+            // splat textures as sub-assets and silently drops them for an unsaved TerrainData.
+            string tdPath = $"{Gen}/StonyTerrain.asset";
+            AssetDatabase.DeleteAsset(tdPath);
+            AssetDatabase.CreateAsset(td, tdPath);
             td.size = new Vector3(info.width, info.terrainHeight, info.depth);
             td.SetHeights(0, 0, heights);
 
@@ -276,7 +289,7 @@ namespace StonyCreek.EditorTools
             }
             td.terrainLayers = new[] { Layer("lawn", 4.5f), Layer("meadow", 5f), Layer("forest_floor", 4f), Layer("sand", 4f) };
 
-            const int A = 1024;
+            const int A = 2048;
             td.alphamapResolution = A;
             var splatTex = new Texture2D(2, 2, TextureFormat.RGBA32, false, true);
             splatTex.LoadImage(File.ReadAllBytes("Data/splat.png"));
@@ -291,9 +304,9 @@ namespace StonyCreek.EditorTools
                 }
             td.SetAlphamaps(0, 0, alpha);
             Object.DestroyImmediate(splatTex);
-            string tdPath = $"{Gen}/StonyTerrain.asset";
-            AssetDatabase.DeleteAsset(tdPath);
-            AssetDatabase.CreateAsset(td, tdPath);
+            EditorUtility.SetDirty(td);
+            AssetDatabase.SaveAssets();
+            if (td.alphamapTextureCount < 1) throw new System.Exception("Terrain paint was not stored");
 
             var go = Terrain.CreateTerrainGameObject(td);
             go.name = "Terrain";
@@ -342,7 +355,7 @@ namespace StonyCreek.EditorTools
         }
 
         /// Ear clipping for simple polygons (lake outlines). Winding is normalised so faces point up.
-        static List<int> EarClip(List<Vector2> pts)
+        internal static List<int> EarClip(List<Vector2> pts)
         {
             var result = new List<int>();
             int n = pts.Count;
@@ -457,6 +470,71 @@ namespace StonyCreek.EditorTools
             AssetDatabase.DeleteAsset(path);
             AssetDatabase.CreateAsset(all[0], path);
             for (int i = 1; i < all.Count; i++) AssetDatabase.AddObjectToAsset(all[i], path);
+        }
+
+        // ---------------- parking lots and buildings from mapped outlines ----------------
+        static void MakeLotsAndBuildings(Terrain terrain, Dictionary<string, Material> mats)
+        {
+            var td = terrain.terrainData;
+            var outlines = ParkData.ReadOutlines(File.ReadAllBytes("Assets/Resources/World/features.bytes"));
+
+            // parking: flat paved polygons on the graded terrain
+            var v = new List<Vector3>(); var uv = new List<Vector2>(); var tri = new List<int>();
+            foreach (var o in outlines)
+            {
+                if (o.kind != 3) continue;
+                var pts = new List<Vector2>(o.pts);
+                var idx = EarClip(pts);
+                int b = v.Count;
+                foreach (var p in pts) { v.Add(new Vector3(p.x, H(td, p.x, p.y) + 0.07f, p.y)); uv.Add(new Vector2(0.5f, 0)); }
+                foreach (int k in idx) tri.Add(b + k);
+            }
+            var lots = new Mesh { name = "parking_lots", indexFormat = IndexFormat.UInt32 };
+            lots.SetVertices(v); lots.SetUVs(0, uv); lots.SetTriangles(tri, 0);
+            var ln = new Vector3[v.Count]; var lt = new Vector4[v.Count];
+            for (int i = 0; i < ln.Length; i++) { ln[i] = Vector3.up; lt[i] = new Vector4(1, 0, 0, -1); }
+            lots.normals = ln; lots.tangents = lt; lots.RecalculateBounds();
+            SaveMesh(lots, "parking_lots");
+            var lotGo = new GameObject("Parking lots");
+            lotGo.AddComponent<MeshFilter>().sharedMesh = lots;
+            var lr = lotGo.AddComponent<MeshRenderer>(); lr.sharedMaterial = mats["lot"]; lr.shadowCastingMode = ShadowCastingMode.Off;
+
+            // buildings, grouped into chunks so far ones are culled
+            const float Chunk = 640f;
+            var chunks = new Dictionary<(int, int), BuildingMaker.Geo>();
+            var rng = new System.Random(4242);
+            int count = 0;
+            foreach (var o in outlines)
+            {
+                if (o.kind != 4) continue;
+                var key = ((int)(o.bounds.center.x / Chunk), (int)(o.bounds.center.y / Chunk));
+                if (!chunks.TryGetValue(key, out var geo)) chunks[key] = geo = new BuildingMaker.Geo();
+                BuildingMaker.Add(geo, new List<Vector2>(o.pts), o.type, o.levels, (x, z) => H(td, x, z), rng);
+                count++;
+            }
+            var root = new GameObject("Buildings");
+            var all = new List<Mesh>();
+            foreach (var kv in chunks)
+            {
+                var geo = kv.Value;
+                if (geo.t.Count == 0) continue;
+                var m = new Mesh { name = $"buildings_{kv.Key.Item1}_{kv.Key.Item2}", indexFormat = IndexFormat.UInt32 };
+                m.SetVertices(geo.v); m.SetNormals(geo.n); m.SetUVs(0, geo.uv); m.SetColors(geo.c); m.SetTriangles(geo.t, 0);
+                m.RecalculateBounds();
+                all.Add(m);
+                var go = new GameObject(m.name);
+                go.transform.SetParent(root.transform, false);
+                go.AddComponent<MeshFilter>().sharedMesh = m;
+                go.AddComponent<MeshRenderer>().sharedMaterial = mats["building"];
+            }
+            string path = $"{Gen}/buildings.asset";
+            AssetDatabase.DeleteAsset(path);
+            if (all.Count > 0)
+            {
+                AssetDatabase.CreateAsset(all[0], path);
+                for (int i = 1; i < all.Count; i++) AssetDatabase.AddObjectToAsset(all[i], path);
+            }
+            Debug.Log($"Stony Creek: {count} buildings, {tri.Count / 3} parking triangles.");
         }
 
         // ---------------- sky, sun, fog ----------------

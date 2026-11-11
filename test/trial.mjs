@@ -202,6 +202,31 @@ console.log('Stony Creek Unity trial');
     assert(!s.wet, 'walked into the lake');
     assert(Math.hypot(s.x - a.x, s.z - a.z) < 40, `slid ${Math.hypot(s.x - a.x, s.z - a.z).toFixed(0)} m along the shore`);
   });
+  await check('desktop: mapped beaches are sand and mapped parking lots are paved', async () => {
+    for (const i of [0, 1]) {
+      await cmd(page, `goto beach ${i}`); await frames(page, 3);
+      const s = await state(page);
+      assert(s.feature === 2 && !s.wet, `beach ${i}: ground type ${s.feature}, wet ${s.wet}`);
+      if (i === 0) { await frames(page, 30); await page.screenshot({ path: `${OUT}/09-beach.png`, timeout: 120000 }); }
+    }
+    for (const i of [0, 5, 20]) {
+      await cmd(page, `goto parking ${i}`); await frames(page, 3);
+      const s = await state(page);
+      assert(s.feature === 3, `parking ${i}: ground type ${s.feature}`);
+      if (i === 5) { await frames(page, 30); await page.screenshot({ path: `${OUT}/10-parking.png`, timeout: 120000 }); }
+    }
+  });
+  await check('desktop: buildings stand on their footprints and block walking', async () => {
+    for (const i of [0, 3]) {
+      await cmd(page, `goto building ${i}`); await frames(page, 3);
+      const a = await state(page);
+      if (i === 0) { await frames(page, 30); await page.screenshot({ path: `${OUT}/11-building.png`, timeout: 120000 }); }
+      await holdKeys(page, ['ShiftLeft', 'KeyW'], 70);
+      const s = await state(page);
+      assert(!s.inBuilding, `walked into building ${i}`);
+      assert(Math.hypot(s.x - a.x, s.z - a.z) > 1, `did not move toward building ${i}`);
+    }
+  });
   await check('desktop: no console errors', async () => {
     assert(page.errors.length === 0, page.errors.slice(0, 3).join(' | '));
   });

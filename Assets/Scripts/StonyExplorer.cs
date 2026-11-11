@@ -102,13 +102,13 @@ namespace StonyCreek
                 var p = walker.transform.position;
                 var fwd = walker.transform.forward;
                 StonyReport(string.Format(CultureInfo.InvariantCulture,
-                    "{{\"ready\":true,\"started\":{0},\"x\":{1:0.0},\"y\":{2:0.0},\"z\":{3:0.0},\"yaw\":{4:0.0},\"pitch\":{5:0.0},\"fwdX\":{6:0.000},\"fwdZ\":{7:0.000},\"fps\":{8:0.0},\"trees\":{9},\"near\":{10},\"far\":{11},\"grass\":{12},\"mapOpen\":{13},\"waypoint\":{14},\"route\":{15:0},\"jog\":{16},\"touch\":{17},\"ui\":{18:0.00},\"screen\":[{19},{20}],\"mini\":[{21:0},{22:0},{23:0}],\"mapBtn\":[{24:0},{25:0}],\"jogBtn\":[{26:0},{27:0}],\"buttons\":{28},\"frame\":{29},\"farDistance\":{30:0},\"wet\":{31}}}",
+                    "{{\"ready\":true,\"started\":{0},\"x\":{1:0.0},\"y\":{2:0.0},\"z\":{3:0.0},\"yaw\":{4:0.0},\"pitch\":{5:0.0},\"fwdX\":{6:0.000},\"fwdZ\":{7:0.000},\"fps\":{8:0.0},\"trees\":{9},\"near\":{10},\"far\":{11},\"grass\":{12},\"mapOpen\":{13},\"waypoint\":{14},\"route\":{15:0},\"jog\":{16},\"touch\":{17},\"ui\":{18:0.00},\"screen\":[{19},{20}],\"mini\":[{21:0},{22:0},{23:0}],\"mapBtn\":[{24:0},{25:0}],\"jogBtn\":[{26:0},{27:0}],\"buttons\":{28},\"frame\":{29},\"farDistance\":{30:0},\"wet\":{31},\"feature\":{32},\"inBuilding\":{33}}}",
                     walker.Started ? "true" : "false", p.x, p.y, p.z, walker.Yaw, walker.Pitch, fwd.x, fwd.z, fps,
                     forest.TreeCount, forest.NearDrawn, forest.FarDrawn, grass.GrassDrawn,
                     hud.MapOpen ? "true" : "false", hud.HasWaypoint ? "true" : "false", hud.RouteLength,
                     walker.Jog ? "true" : "false", walker.TouchMode ? "true" : "false", hud.UiScale, Screen.width, Screen.height,
                     hud.MiniRect.center.x, hud.MiniRect.center.y, hud.MiniRect.width, hud.MapButtonRect.center.x, hud.MapButtonRect.center.y,
-                    hud.JogButtonRect.center.x, hud.JogButtonRect.center.y, hud.MapOpen ? hud.ButtonsJson : "[]", Time.frameCount, forest.farDistance, data.LakeAt(p.x, p.z) != null ? "true" : "false"));
+                    hud.JogButtonRect.center.x, hud.JogButtonRect.center.y, hud.MapOpen ? hud.ButtonsJson : "[]", Time.frameCount, forest.farDistance, data.LakeAt(p.x, p.z) != null ? "true" : "false", data.FeatureAt(p.x, p.z), data.InBuilding(p.x, p.z) ? "true" : "false"));
             }
         }
 
@@ -127,6 +127,32 @@ namespace StonyCreek
                 case "clear": hud.ClearWaypoint(); break;
                 case "time": SetSun(F(1)); break;
                 case "shore": Shore(); break;
+                case "goto": Goto(a[1], int.Parse(a[2])); break;
+            }
+        }
+
+        // Test hook: stand in parking lot i, on beach i, or 7 m outside walled building i facing it.
+        void Goto(string what, int i)
+        {
+            if (what == "parking" || what == "beach")
+            {
+                var list = what == "parking" ? data.info.parking : data.info.beaches;
+                var p = list[Mathf.Clamp(i, 0, list.Length - 1)];
+                walker.TeleportTo(new Vector2(p.x, p.z), walker.Yaw);
+                return;
+            }
+            foreach (var o in data.outlines)
+            {
+                if (o.kind != 4 || o.type == 3 || o.bounds.width < 5 || data.FeatureAt(o.bounds.center.x, o.bounds.center.y) != 4 || i-- > 0) continue;
+                var c = o.bounds.center;
+                foreach (var dir in new[] { Vector2.up, Vector2.right, Vector2.down, Vector2.left })
+                {
+                    var start = c + dir * (Mathf.Max(o.bounds.width, o.bounds.height) * 0.5f + 7f);
+                    if (data.FeatureAt(start.x, start.y) == 4 || data.LakeAt(start.x, start.y) != null) continue;
+                    var d = c - start;
+                    walker.TeleportTo(start, Mathf.Repeat(Mathf.Atan2(d.x, d.y) * Mathf.Rad2Deg, 360));
+                    return;
+                }
             }
         }
 

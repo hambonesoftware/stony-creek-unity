@@ -449,6 +449,15 @@ namespace StonyCreek
                 Text(r, p.name, labelBold, Color.white);
                 placeHits.Add((new Rect(s.x - S(14), s.y - S(16), S(200), S(32)), i));
             }
+            if (mapSpan < 1300 && data.info.parking != null)
+                foreach (var l in data.info.parking)
+                {
+                    var s = WorldToMap(new Vector2(l.x, l.z));
+                    if (s.x < -20 || s.y < -20 || s.x > Screen.width + 20 || s.y > Screen.height + 20) continue;
+                    var pr = new Rect(s.x - S(9), s.y - S(9), S(18), S(18));
+                    GUI.DrawTexture(pr, white, ScaleMode.StretchToFill, true, 0, new Color(0.16f, 0.36f, 0.72f, 0.95f), 0, S(4));
+                    Text(pr, "P", small, Color.white, TextAnchor.MiddleCenter, false);
+                }
             if (mapSpan < 1600)
                 foreach (var l in data.info.landmarks)
                 {

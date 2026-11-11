@@ -160,7 +160,7 @@ namespace StonyCreek
         Vector2 TryMove(Vector2 from, Vector2 step)
         {
             bool Ok(Vector2 p) =>
-                p.x > 6 && p.y > 6 && p.x < data.info.width - 6 && p.y < data.info.depth - 6 && data.LakeAt(p.x, p.y) == null;
+                p.x > 6 && p.y > 6 && p.x < data.info.width - 6 && p.y < data.info.depth - 6 && data.LakeAt(p.x, p.y) == null && !data.InBuilding(p.x, p.y);
             var full = from + step;
             if (Ok(full)) return full;
             var sx = from + new Vector2(step.x, 0);

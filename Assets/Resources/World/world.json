@@ -73,14 +73,268 @@
    "z": 2537.3
   }
  ],
+ "parking": [
+  {
+   "name": "Parking",
+   "x": 3333.2,
+   "z": 1568.6
+  },
+  {
+   "name": "Parking",
+   "x": 2877.2,
+   "z": 2952.5
+  },
+  {
+   "name": "Inwood Rustic Trails Trailhead Parking Lot",
+   "x": 3671.7,
+   "z": 6640.6
+  },
+  {
+   "name": "West Branch Area B",
+   "x": 1510.3,
+   "z": 2918.6
+  },
+  {
+   "name": "West Branch Area D",
+   "x": 1392.8,
+   "z": 2619.1
+  },
+  {
+   "name": "West Branch Area F",
+   "x": 1360.0,
+   "z": 2392.1
+  },
+  {
+   "name": "West Branch Area A",
+   "x": 1602.9,
+   "z": 2943.3
+  },
+  {
+   "name": "West Branch Area C",
+   "x": 1272.9,
+   "z": 2673.9
+  },
+  {
+   "name": "West Branch Area E",
+   "x": 1318.3,
+   "z": 2537.8
+  },
+  {
+   "name": "Osprey Trail Parking Lot",
+   "x": 4136.0,
+   "z": 5144.2
+  },
+  {
+   "name": "Parking",
+   "x": 4820.6,
+   "z": 3297.4
+  },
+  {
+   "name": "Parking",
+   "x": 4422.6,
+   "z": 3353.2
+  },
+  {
+   "name": "Parking",
+   "x": 3873.3,
+   "z": 1742.7
+  },
+  {
+   "name": "Parking",
+   "x": 3353.1,
+   "z": 906.0
+  },
+  {
+   "name": "Parking",
+   "x": 3846.7,
+   "z": 2281.3
+  },
+  {
+   "name": "Parking",
+   "x": 2443.4,
+   "z": 3056.8
+  },
+  {
+   "name": "Parking",
+   "x": 2456.8,
+   "z": 3032.7
+  },
+  {
+   "name": "Parking",
+   "x": 597.3,
+   "z": 6573.5
+  },
+  {
+   "name": "Parking",
+   "x": 998.9,
+   "z": 6596.1
+  },
+  {
+   "name": "Parking",
+   "x": 1328.0,
+   "z": 9069.6
+  },
+  {
+   "name": "Parking",
+   "x": 4260.9,
+   "z": 6294.3
+  },
+  {
+   "name": "Parking",
+   "x": 4302.1,
+   "z": 6303.1
+  },
+  {
+   "name": "Parking",
+   "x": 2264.0,
+   "z": 1789.3
+  },
+  {
+   "name": "Parking",
+   "x": 2032.4,
+   "z": 2386.0
+  },
+  {
+   "name": "Parking",
+   "x": 2026.6,
+   "z": 2358.1
+  },
+  {
+   "name": "Parking",
+   "x": 1881.0,
+   "z": 2521.5
+  },
+  {
+   "name": "Parking",
+   "x": 1904.1,
+   "z": 2517.4
+  },
+  {
+   "name": "Parking",
+   "x": 1214.6,
+   "z": 1499.9
+  },
+  {
+   "name": "Parking",
+   "x": 4654.5,
+   "z": 3075.4
+  },
+  {
+   "name": "Parking",
+   "x": 4666.1,
+   "z": 3053.8
+  },
+  {
+   "name": "Parking",
+   "x": 5271.6,
+   "z": 2783.6
+  },
+  {
+   "name": "Parking",
+   "x": 5297.8,
+   "z": 2775.1
+  },
+  {
+   "name": "Parking",
+   "x": 5329.9,
+   "z": 3090.3
+  },
+  {
+   "name": "Parking",
+   "x": 5343.6,
+   "z": 3066.5
+  },
+  {
+   "name": "Parking",
+   "x": 4016.6,
+   "z": 2594.8
+  },
+  {
+   "name": "Parking",
+   "x": 3986.5,
+   "z": 2586.4
+  },
+  {
+   "name": "Parking",
+   "x": 3820.9,
+   "z": 2386.4
+  },
+  {
+   "name": "Parking",
+   "x": 3736.1,
+   "z": 2341.9
+  },
+  {
+   "name": "Parking",
+   "x": 3542.3,
+   "z": 1989.4
+  },
+  {
+   "name": "Parking",
+   "x": 3497.1,
+   "z": 2145.1
+  },
+  {
+   "name": "Parking",
+   "x": 4956.0,
+   "z": 3807.4
+  },
+  {
+   "name": "Parking",
+   "x": 4793.9,
+   "z": 3741.8
+  },
+  {
+   "name": "Parking",
+   "x": 4945.9,
+   "z": 4000.1
+  },
+  {
+   "name": "Parking",
+   "x": 4118.7,
+   "z": 6356.7
+  },
+  {
+   "name": "Parking",
+   "x": 718.6,
+   "z": 9214.1
+  },
+  {
+   "name": "Parking",
+   "x": 4916.4,
+   "z": 3026.0
+  },
+  {
+   "name": "Parking",
+   "x": 5285.6,
+   "z": 2933.8
+  }
+ ],
+ "beaches": [
+  {
+   "name": "Eastwood Beach",
+   "x": 3375.6,
+   "z": 2284.4
+  },
+  {
+   "name": "Baypoint Beach",
+   "x": 2785.9,
+   "z": 2754.7
+  },
+  {
+   "name": "Beach",
+   "x": 3421.3,
+   "z": 2081.1
+  }
+ ],
  "mapWidth": 2048,
  "mapHeight": 2888,
  "mapMetersPerPixel": 3.1933873550276552,
  "speciesCounts": {
-  "oak": 71874,
-  "maple": 98810,
-  "birch": 33760,
-  "pine": 35424
+  "oak": 75769,
+  "maple": 103215,
+  "birch": 35263,
+  "pine": 37157
  },
  "sources": [
   "USGS 3DEP ImageServer (real elevation, meters)",

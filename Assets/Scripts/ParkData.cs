@@ -11,7 +11,7 @@ namespace StonyCreek
     {
         public float width, depth, terrainHeight, datum, mapMetersPerPixel;
         public int mapWidth, mapHeight;
-        public NamedPoint[] places, landmarks;
+        public NamedPoint[] places, landmarks, parking, beaches;
         public string[] sources;
     }
 
@@ -30,6 +30,9 @@ namespace StonyCreek
 
     public class Lake { public float level; public Vector2[] pts; public Rect bounds; }
 
+    /// A mapped outline: kind 3 = parking lot, 4 = building (type 3 = open picnic shelter).
+    public class Outline { public int kind, type, levels; public Vector2[] pts; public Rect bounds; }
+
     /// Real park geography baked by Tools/prepare_world.py (x east, z north, metres).
     public class ParkData
     {
@@ -37,6 +40,8 @@ namespace StonyCreek
         public List<ParkPath> paths = new();
         public List<Lake> lakes = new();
         public byte[] landcover; public int lcW, lcH;
+        public List<Outline> outlines = new();
+        byte[] featureMask; int fmW, fmH; float fmMpp;
         public Texture2D map;
 
         // routing graph over shared OSM nodes
@@ -54,6 +59,7 @@ namespace StonyCreek
             d.ReadPaths(Resources.Load<TextAsset>("World/paths").bytes);
             d.ReadLakes(Resources.Load<TextAsset>("World/lakes").bytes);
             d.ReadLandcover(Resources.Load<TextAsset>("World/landcover").bytes);
+            d.ReadFeatures(Resources.Load<TextAsset>("World/featuremask").bytes, Resources.Load<TextAsset>("World/features").bytes);
             d.map = Resources.Load<Texture2D>("World/parkmap");
             d.BuildGraph();
             return d;
@@ -103,6 +109,54 @@ namespace StonyCreek
             lcW = BitConverter.ToUInt16(bytes, 4); lcH = BitConverter.ToUInt16(bytes, 6);
             landcover = new byte[lcW * lcH];
             Array.Copy(bytes, 8, landcover, 0, landcover.Length);
+        }
+
+        void ReadFeatures(byte[] mask, byte[] shapes)
+        {
+            fmW = BitConverter.ToUInt16(mask, 4); fmH = BitConverter.ToUInt16(mask, 6); fmMpp = BitConverter.ToSingle(mask, 8);
+            featureMask = new byte[fmW * fmH];
+            Array.Copy(mask, 12, featureMask, 0, featureMask.Length);
+            outlines = ReadOutlines(shapes);
+        }
+
+        public static List<Outline> ReadOutlines(byte[] bytes)
+        {
+            var list = new List<Outline>();
+            using var r = new BinaryReader(new MemoryStream(bytes));
+            r.ReadBytes(4);
+            int count = r.ReadInt32();
+            for (int i = 0; i < count; i++)
+            {
+                var o = new Outline { kind = r.ReadByte(), type = r.ReadByte(), levels = r.ReadByte() };
+                int n = r.ReadUInt16();
+                o.pts = new Vector2[n];
+                Vector2 min = Vector2.positiveInfinity, max = Vector2.negativeInfinity;
+                for (int k = 0; k < n; k++)
+                {
+                    var p = new Vector2(r.ReadSingle(), r.ReadSingle());
+                    o.pts[k] = p; min = Vector2.Min(min, p); max = Vector2.Max(max, p);
+                }
+                o.bounds = Rect.MinMaxRect(min.x, min.y, max.x, max.y);
+                list.Add(o);
+            }
+            return list;
+        }
+
+        /// Mapped ground at a point: 0 none, 1 mown grass, 2 sand, 3 parking lot, 4 building.
+        public int FeatureAt(float x, float z)
+        {
+            int c = (int)(x / fmMpp), r = (int)((info.depth - z) / fmMpp);
+            if (c < 0 || r < 0 || c >= fmW || r >= fmH) return 0;
+            return featureMask[r * fmW + c];
+        }
+
+        /// True inside a walled building (picnic shelters are open and can be walked through).
+        public bool InBuilding(float x, float z)
+        {
+            var p = new Vector2(x, z);
+            foreach (var o in outlines)
+                if (o.kind == 4 && o.type != 3 && o.bounds.Contains(p) && Inside(o.pts, x, z)) return true;
+            return false;
         }
 
         /// NLCD class at a point (41 deciduous, 71 grassland, 21 developed open space, ...).

@@ -27,11 +27,13 @@ The radar rotates with you, like GTA's. It shows the compass ring with N/E/S/W, 
 - **Elevation:** USGS 3DEP, about 6–9 m grid. It's the same raster sunward's deploy downloads.
 - **Trails, roads, lakes, habitat outlines and named landmarks:** OpenStreetMap, © OpenStreetMap contributors (ODbL).
 - **Where forest, meadow, wetland, lawn and suburbs are:** USGS Annual NLCD 2024 land cover at 30 m, from the Esri image service.
+- **Beaches, sand, parking lots, golf course, mown grass and building footprints:** exact OpenStreetMap outlines. Sand is painted on the mapped beaches, parking lots are paved and graded flat, and trees are cleared off all of them.
 
 **Illustrative, not surveyed**
 - **Tree positions:** the land cover says where woods are, but each of the roughly 240,000 trees is placed by a seeded generator. Species mixes follow sunward's per-area art direction.
 - **Grass and shrubs:** generated around you from the land cover.
-- **Buildings, benches, signs and fences:** not modelled.
+- **Buildings:** the footprints are real, but the walls, roofs and windows are generic shapes raised from them. Picnic shelters are a roof on posts.
+- **Benches, signs and fences:** not modelled.
 
 **Art**
 - **Ground and bark:** CC0 photo textures from [Poly Haven](https://polyhaven.com). The list is in `Assets/Textures/Ground/SOURCES.md`.
@@ -44,6 +46,7 @@ The radar rotates with you, like GTA's. It shows the compass ring with N/E/S/W, 
 
 ```
 Tools/fetch_textures.py   downloads the Poly Haven CC0 textures
+Tools/fetch_features.py   downloads beaches, parking, buildings and golf outlines from OpenStreetMap
 Tools/make_textures.py    grass blades, birch bark, water ripples, ground variation
 Tools/prepare_world.py    projects the GIS data, carves lake beds, places trees, paints the map
 Assets/Editor/            builds the terrain, trails, lakes, tree models and scene; batch web build
@@ -56,6 +59,7 @@ To rebuild, with Unity **6000.3.28f1** and Web Build Support installed:
 
 ```bash
 python Tools/fetch_textures.py
+python Tools/fetch_features.py
 python Tools/make_textures.py
 python Tools/prepare_world.py
 "C:/Program Files/Unity/Hub/Editor/6000.3.28f1/Editor/Unity.exe" -batchmode -quit -projectPath . -buildTarget WebGL -executeMethod StonyCreek.EditorTools.StonyBuild.BuildWeb -logFile web-build.log

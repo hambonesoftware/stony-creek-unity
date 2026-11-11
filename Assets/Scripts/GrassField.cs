@@ -57,11 +57,13 @@ namespace StonyCreek
                 float x = x0 + Rand() * Cell, z = z0 + Rand() * Cell;
                 if (x < 1 || z < 1 || x > w - 1 || z > d - 1) continue;
                 bool shrub = i >= ng;
+                int feature = data.FeatureAt(x, z);
+                if (feature >= 2 || (feature == 1 && (shrub || i % 3 != 0))) continue;   // bare sand, asphalt, buildings; mown grass stays thin
                 float clearance = data.PathDistance(new Vector2(x, z), out _, 12f);
                 if (clearance < (shrub ? 2.2f : 0.15f)) continue;
                 if (data.LakeAt(x, z) != null) continue;
                 float y = td.GetInterpolatedHeight(x / w, z / d);
-                float s = shrub ? 0.5f + Rand() * 0.6f : (0.55f + Rand() * 0.6f) * tall * (clearance < 1.2f ? 0.6f : 1f);
+                float s = feature == 1 ? 0.3f + Rand() * 0.15f : shrub ? 0.5f + Rand() * 0.6f : (0.55f + Rand() * 0.6f) * tall * (clearance < 1.2f ? 0.6f : 1f);
                 var m = Matrix4x4.TRS(new Vector3(x, y - 0.03f, z), Quaternion.Euler(0, Rand() * 360f, 0), new Vector3(s, s * (shrub ? 1 : 0.8f + Rand() * 0.5f), s));
                 (shrub ? shrubs : grass).Add(m);
             }
