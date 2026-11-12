@@ -7,11 +7,14 @@ using UnityEngine;
 namespace StonyCreek
 {
     [Serializable] public class NamedPoint { public string name; public float x, z; }
+    [Serializable] public class PropSpot { public float x, z, yaw; }
+    [Serializable] public class PropSamples { public PropSpot[] car, picnic, bench, slide, roundabout, canoe, grill, canoe_rack; }
     [Serializable] public class WorldInfo
     {
         public float width, depth, terrainHeight, datum, mapMetersPerPixel;
         public int mapWidth, mapHeight;
         public NamedPoint[] places, landmarks, parking, beaches;
+        public PropSamples propSamples;
         public string[] sources;
     }
 
@@ -31,7 +34,7 @@ namespace StonyCreek
     public class Lake { public float level; public Vector2[] pts; public Rect bounds; }
 
     /// A mapped outline: kind 3 = parking lot, 4 = building (type 3 = open picnic shelter).
-    public class Outline { public int kind, type, levels; public Vector2[] pts; public Rect bounds; }
+    public class Outline { public int kind, type, levels, style, front; public Vector2[] pts; public Rect bounds; }
 
     /// Real park geography baked by Tools/prepare_world.py (x east, z north, metres).
     public class ParkData
@@ -127,7 +130,7 @@ namespace StonyCreek
             int count = r.ReadInt32();
             for (int i = 0; i < count; i++)
             {
-                var o = new Outline { kind = r.ReadByte(), type = r.ReadByte(), levels = r.ReadByte() };
+                var o = new Outline { kind = r.ReadByte(), type = r.ReadByte(), levels = r.ReadByte(), style = r.ReadByte(), front = r.ReadByte() };
                 int n = r.ReadUInt16();
                 o.pts = new Vector2[n];
                 Vector2 min = Vector2.positiveInfinity, max = Vector2.negativeInfinity;

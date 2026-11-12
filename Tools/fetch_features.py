@@ -23,6 +23,10 @@ QUERY = f"""
   way["leisure"~"^(pitch|playground)$"];
 );
 out geom;
+(
+  node["amenity"="boat_rental"]; way["amenity"="boat_rental"];
+);
+out center;
 """
 HOSTS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"]
 
@@ -70,9 +74,14 @@ def main():
     if data is None:
         sys.exit("All Overpass mirrors failed")
 
-    out = []
+    out, points = [], []
     for e in data["elements"]:
         t = e.get("tags", {})
+        if t.get("amenity") == "boat_rental":
+            c = e.get("center") or e
+            if "lat" in c:
+                points.append({"kind": "boat_rental", "name": t.get("name", ""), "lat": round(c["lat"], 7), "lon": round(c["lon"], 7)})
+            continue
         kind = kind_of(t)
         if not kind:
             continue
@@ -94,8 +103,8 @@ def main():
     counts = {}
     for f in out:
         counts[f["kind"]] = counts.get(f["kind"], 0) + 1
-    (ROOT / "Data" / "stony-creek-features.json").write_text(json.dumps({"source": "(c) OpenStreetMap contributors, Open Database License", "features": out}, separators=(",", ":")), encoding="utf-8")
-    print(counts)
+    (ROOT / "Data" / "stony-creek-features.json").write_text(json.dumps({"source": "(c) OpenStreetMap contributors, Open Database License", "features": out, "points": points}, separators=(",", ":")), encoding="utf-8")
+    print(counts, points)
 
 
 if __name__ == "__main__":

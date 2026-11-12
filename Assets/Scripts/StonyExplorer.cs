@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using UnityEngine;
@@ -16,6 +17,14 @@ namespace StonyCreek
         public Light sun;
 
         ParkData data;
+        Renderer[] propRenderers = new Renderer[0];
+
+        int CountVisibleProps()
+        {
+            int n = 0;
+            foreach (var r in propRenderers) if (r != null && r.isVisible) n++;
+            return n;
+        }
         float reportTimer, fpsTime; int fpsFrames; float fps;
         bool mobile;
 
@@ -51,6 +60,13 @@ namespace StonyCreek
                 QualitySettings.shadowDistance = 42;
             }
             maxFar = forest.farDistance;
+            // small props vanish at a distance: cars and tables are invisible past a few hundred metres anyway
+            var cull = new float[32];
+            cull[8] = mobile ? 170f : 260f;
+            Camera.main.layerCullDistances = cull;
+            var found = new List<Renderer>();
+            foreach (var r in FindObjectsByType<MeshRenderer>(FindObjectsSortMode.None)) if (r.gameObject.layer == 8) found.Add(r);
+            propRenderers = found.ToArray();
             forest.Init(data);
             grass.Init(data);
             walker.Init(data);
@@ -102,13 +118,13 @@ namespace StonyCreek
                 var p = walker.transform.position;
                 var fwd = walker.transform.forward;
                 StonyReport(string.Format(CultureInfo.InvariantCulture,
-                    "{{\"ready\":true,\"started\":{0},\"x\":{1:0.0},\"y\":{2:0.0},\"z\":{3:0.0},\"yaw\":{4:0.0},\"pitch\":{5:0.0},\"fwdX\":{6:0.000},\"fwdZ\":{7:0.000},\"fps\":{8:0.0},\"trees\":{9},\"near\":{10},\"far\":{11},\"grass\":{12},\"mapOpen\":{13},\"waypoint\":{14},\"route\":{15:0},\"jog\":{16},\"touch\":{17},\"ui\":{18:0.00},\"screen\":[{19},{20}],\"mini\":[{21:0},{22:0},{23:0}],\"mapBtn\":[{24:0},{25:0}],\"jogBtn\":[{26:0},{27:0}],\"buttons\":{28},\"frame\":{29},\"farDistance\":{30:0},\"wet\":{31},\"feature\":{32},\"inBuilding\":{33}}}",
+                    "{{\"ready\":true,\"started\":{0},\"x\":{1:0.0},\"y\":{2:0.0},\"z\":{3:0.0},\"yaw\":{4:0.0},\"pitch\":{5:0.0},\"fwdX\":{6:0.000},\"fwdZ\":{7:0.000},\"fps\":{8:0.0},\"trees\":{9},\"near\":{10},\"far\":{11},\"grass\":{12},\"mapOpen\":{13},\"waypoint\":{14},\"route\":{15:0},\"jog\":{16},\"touch\":{17},\"ui\":{18:0.00},\"screen\":[{19},{20}],\"mini\":[{21:0},{22:0},{23:0}],\"mapBtn\":[{24:0},{25:0}],\"jogBtn\":[{26:0},{27:0}],\"buttons\":{28},\"frame\":{29},\"farDistance\":{30:0},\"wet\":{31},\"feature\":{32},\"inBuilding\":{33},\"props\":{34},\"propsNear\":{35}}}",
                     walker.Started ? "true" : "false", p.x, p.y, p.z, walker.Yaw, walker.Pitch, fwd.x, fwd.z, fps,
                     forest.TreeCount, forest.NearDrawn, forest.FarDrawn, grass.GrassDrawn,
                     hud.MapOpen ? "true" : "false", hud.HasWaypoint ? "true" : "false", hud.RouteLength,
                     walker.Jog ? "true" : "false", walker.TouchMode ? "true" : "false", hud.UiScale, Screen.width, Screen.height,
                     hud.MiniRect.center.x, hud.MiniRect.center.y, hud.MiniRect.width, hud.MapButtonRect.center.x, hud.MapButtonRect.center.y,
-                    hud.JogButtonRect.center.x, hud.JogButtonRect.center.y, hud.MapOpen ? hud.ButtonsJson : "[]", Time.frameCount, forest.farDistance, data.LakeAt(p.x, p.z) != null ? "true" : "false", data.FeatureAt(p.x, p.z), data.InBuilding(p.x, p.z) ? "true" : "false"));
+                    hud.JogButtonRect.center.x, hud.JogButtonRect.center.y, hud.MapOpen ? hud.ButtonsJson : "[]", Time.frameCount, forest.farDistance, data.LakeAt(p.x, p.z) != null ? "true" : "false", data.FeatureAt(p.x, p.z), data.InBuilding(p.x, p.z) ? "true" : "false", propRenderers.Length, CountVisibleProps()));
             }
         }
 
@@ -127,13 +143,42 @@ namespace StonyCreek
                 case "clear": hud.ClearWaypoint(); break;
                 case "time": SetSun(F(1)); break;
                 case "shore": Shore(); break;
-                case "goto": Goto(a[1], int.Parse(a[2])); break;
+                case "goto": Goto(a[1], int.Parse(a[2]), a.Length > 3 ? int.Parse(a[3]) : 0, a.Length > 4 ? F(4) : float.NaN); break;
+                case "prop": GoProp(a[1], int.Parse(a[2]), a.Length > 3 ? F(3) : 9f, a.Length > 4 ? F(4) : 0f); break;
             }
         }
 
-        // Test hook: stand in parking lot i, on beach i, or 7 m outside walled building i facing it.
-        void Goto(string what, int i)
+        // Test hook: stand `dist` metres from sample prop i of a kind (picnic, bench, slide, roundabout, canoe, grill, car), looking at it.
+        void GoProp(string kind, int i, float dist, float bearing)
         {
+            var s = data.info.propSamples;
+            PropSpot[] list = kind switch { "car" => s.car, "picnic" => s.picnic, "bench" => s.bench, "slide" => s.slide, "roundabout" => s.roundabout, "canoe" => s.canoe, "grill" => s.grill, "canoe_rack" => s.canoe_rack, _ => null };
+            if (list == null || list.Length == 0) return;
+            var p = list[Mathf.Clamp(i, 0, list.Length - 1)];
+            float a = bearing * Mathf.Deg2Rad;
+            var from = new Vector2(p.x + Mathf.Sin(a) * dist, p.z + Mathf.Cos(a) * dist);
+            walker.TeleportTo(from, Mathf.Repeat(bearing + 180f, 360f));
+        }
+
+        // Test hook: stand in parking lot i, on beach i, or 7 m outside walled building i facing it.
+        void Goto(string what, int i, int j = 0, float bearing = float.NaN)
+        {
+            if (what == "style")
+            {
+                // stand 26 m from the j-th building of a style (1 lodge, 2 brick flat, 3 shelter, 4 civic), looking at it
+                foreach (var o in data.outlines)
+                {
+                    if (o.kind != 4 || (i == 3 ? o.type != 3 : o.style != i) || j-- > 0) continue;
+                    var c = o.bounds.center;
+                    // bearing = compass direction from the building to the viewer (clockwise from north); default is south-south-east
+                    var dir = float.IsNaN(bearing) ? new Vector2(0.45f, -0.9f).normalized : new Vector2(Mathf.Sin(bearing * Mathf.Deg2Rad), Mathf.Cos(bearing * Mathf.Deg2Rad));
+                    var from = c + dir * (Mathf.Max(o.bounds.width, o.bounds.height) * 0.5f + 20f);
+                    var d = c - from;
+                    walker.TeleportTo(from, Mathf.Repeat(Mathf.Atan2(d.x, d.y) * Mathf.Rad2Deg, 360));
+                    return;
+                }
+                return;
+            }
             if (what == "parking" || what == "beach")
             {
                 var list = what == "parking" ? data.info.parking : data.info.beaches;

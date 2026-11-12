@@ -5,7 +5,7 @@ Inputs (Data/):
   stony-creek-map.json       OpenStreetMap paths, water, habitat, landmarks
   stony-foliage-zones.json   sunward's per-area tree mix (art direction)
   nlcd.tif                   USGS Annual NLCD 2024 land cover, 30 m
-  stony-creek-features.json  OpenStreetMap beaches, sand, parking lots, buildings, golf, mown grass, woods
+  stony-creek-features.json  OpenStreetMap beaches, sand, parking lots, buildings, golf, mown grass, woods, boat rental
 
 Outputs:
   Data/terrain_heights.r16         1025x1025 uint16, row 0 = south, lakes carved
@@ -23,6 +23,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 from scipy import ndimage
+from scipy.spatial import cKDTree
+from matplotlib.path import Path as MPath
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "Data"
@@ -64,7 +66,9 @@ zones = json.loads((DATA / "stony-foliage-zones.json").read_text(encoding="utf-8
 
 # mapped ground features (Tools/fetch_features.py), projected to metres
 features = []
-for f in json.loads((DATA / "stony-creek-features.json").read_text(encoding="utf-8"))["features"]:
+_feat_json = json.loads((DATA / "stony-creek-features.json").read_text(encoding="utf-8"))
+boat_rentals = [to_xz(p["lon"], p["lat"]) for p in _feat_json.get("points", []) if p["kind"] == "boat_rental"]
+for f in _feat_json["features"]:
     pts = np.array([to_xz(lon, lat) for lon, lat in f["coords"][:-1]])
     if len(pts) >= 3:
         features.append({"kind": f["kind"], "name": f.get("name", ""), "type": f.get("type", ""), "levels": f.get("levels", 0), "pts": pts})
@@ -174,6 +178,13 @@ def draw_woods(d, t):
 
 feature_mask = raster(MW, MH, MPP, draw_features)
 wood_mask = raster(MW, MH, MPP, draw_woods) > 0
+def draw_roads(d, t):
+    for p in paths:
+        if p["kind"] in ("service", "residential"):
+            d.line([t(x, z) for x, z in p["pts"]], fill=255, width=max(1, int(7.5 / MPP)), joint="curve")
+
+
+road_mask = raster(MW, MH, MPP, draw_roads) > 0
 water_mask = raster(MW, MH, MPP, draw_water) > 0
 feature_mask[water_mask & (feature_mask != 4)] = 0
 # no trees on or right beside mown grass, sand, parking and buildings
@@ -307,15 +318,6 @@ with open(OUT / "landcover.bytes", "wb") as f:
 fmask = feature_mask[::2, ::2]
 with open(OUT / "featuremask.bytes", "wb") as f:
     f.write(struct.pack("<4sHHf", b"FMSK", fmask.shape[1], fmask.shape[0], MPP * 2)); f.write(fmask.astype(np.uint8).tobytes())
-BTYPE = {"building": 0, "house": 1, "residential": 1, "detached": 1, "garage": 2, "garages": 2, "shed": 2, "shelter": 3, "toilets": 4}
-outlines = [f for f in features if f["kind"] in ("parking", "building")]
-with open(OUT / "features.bytes", "wb") as f:
-    f.write(struct.pack("<4sI", b"FEAT", len(outlines)))
-    for o in outlines:
-        f.write(struct.pack("<BBBH", 3 if o["kind"] == "parking" else 4, BTYPE.get(o["type"], 0), min(o["levels"], 9), len(o["pts"])))
-        f.write(o["pts"].astype("<f4").tobytes())
-
-
 def inner_point(pts, want):
     """A point inside the outline whose mask value is `want` (centroids can fall outside curved shapes)."""
     c = pts.mean(0)
@@ -339,6 +341,201 @@ def named_points(kind, want, default):
 
 parking_pts = named_points("parking", 3, "Parking")
 beach_pts = named_points("beach", 2, "Beach")
+
+# ---------- building styles (from Street View reference) ----------
+def area_m2(pts):
+    x, z = pts[:, 0], pts[:, 1]
+    return abs(float(np.dot(x, np.roll(z, -1)) - np.dot(z, np.roll(x, -1)))) / 2
+
+
+BTYPE = {"building": 0, "house": 1, "residential": 1, "detached": 1, "garage": 2, "garages": 2, "shed": 2, "shelter": 3, "toilets": 4}
+# style 0 generic, 1 timber lodge (Nature Center), 2 flat-roofed brick (beach bathhouses and restrooms), 4 civic brick
+dense = []
+for pth in paths:
+    q = pth["pts"]
+    for i in range(1, len(q)):
+        n = max(1, int(np.hypot(*(q[i] - q[i - 1])) / 5))
+        dense.extend(q[i - 1] + (q[i] - q[i - 1]) * (k / n) for k in range(n))
+path_tree = cKDTree(np.array(dense))
+beach_xy = [(b["x"], b["z"]) for b in beach_pts]
+outlines = [f for f in features if f["kind"] in ("parking", "building")]
+style_counts = {}
+with open(OUT / "features.bytes", "wb") as f:
+    f.write(struct.pack("<4sI", b"FEAT", len(outlines)))
+    for o in outlines:
+        style, front = 0, 0
+        if o["kind"] == "building":
+            c = o["pts"].mean(0)
+            near_beach = any(math.hypot(c[0] - bx, c[1] - bz) < 220 for bx, bz in beach_xy)
+            ar = area_m2(o["pts"])
+            if "Nature Center" in o["name"]:
+                style = 1
+            elif o["name"] == "Park Office":
+                style = 4
+            elif o["type"] == "toilets" or (o["type"] == "building" and near_beach and 40 <= ar <= 900):
+                style = 2
+            _, i = path_tree.query(c)
+            v = path_tree.data[i] - c
+            front = int(round(math.atan2(v[1], v[0]) / (2 * math.pi) * 256)) % 256
+            style_counts[style] = style_counts.get(style, 0) + 1
+        f.write(struct.pack("<BBBBBH", 3 if o["kind"] == "parking" else 4, BTYPE.get(o["type"], 0), min(o["levels"], 9), style, front, len(o["pts"])))
+        f.write(o["pts"].astype("<f4").tobytes())
+
+# ---------- props (picnic tables, benches, playgrounds, canoes, grills, parked cars) ----------
+ROLES = ["picnic_a", "picnic_b", "picnic_c", "bench", "slide", "roundabout", "canoe_a", "canoe_b", "canoe_rack", "grill",
+         "car_sedan", "car_hatch", "car_wagon", "car_muscle"]
+prng = np.random.default_rng(777)
+props = []
+water_dist = ndimage.distance_transform_edt(~water_mask) * MPP
+
+
+def add_prop(role, x, z, yaw, scale=1.0):
+    props.append((ROLES.index(role), float(x), float(z), float(yaw) % 360, float(scale)))
+
+
+def yaw_of(d):  # Unity yaw: clockwise from north (+z) toward east (+x)
+    return math.degrees(math.atan2(d[0], d[1]))
+
+
+def long_axes(pts):
+    e = np.roll(pts, -1, 0) - pts
+    L = np.hypot(e[:, 0], e[:, 1])
+    a = e[int(L.argmax())] / max(L.max(), 1e-6)
+    return a, np.array([-a[1], a[0]])
+
+
+def dry(x, z):
+    return not mask_at(water_mask, x, z) and mask_at(feature_mask, x, z) not in (3, 4)
+
+
+# shelters: tables underneath, a grill beside
+for fb in features:
+    if fb["kind"] != "building" or fb["type"] != "shelter":
+        continue
+    a, b = long_axes(fb["pts"])
+    c = fb["pts"].mean(0)
+    ua, ub = fb["pts"] @ a, fb["pts"] @ b
+    length, width = ua.max() - ua.min(), ub.max() - ub.min()
+    if width > length:
+        a, b, length, width = b, -a, width, length
+    n = 2 if length >= 7 else 1
+    for k in range(n):
+        o = c + a * ((k - (n - 1) / 2) * min(3.6, length * 0.4))
+        add_prop(["picnic_a", "picnic_b", "picnic_c"][int(prng.integers(0, 3))], o[0], o[1], yaw_of(a) + (90 if width < 4 else 0) + (180 if prng.random() < 0.5 else 0))
+    g = c + b * (width / 2 + 3.2) + a * (length * 0.3)
+    if dry(*g):
+        add_prop("grill", g[0], g[1], prng.uniform(0, 360))
+
+# playgrounds
+for fp in features:
+    if fp["kind"] != "playground":
+        continue
+    q = inner_point(fp["pts"], 1)
+    if q is None:
+        continue
+    poly = MPath(fp["pts"])
+    add_prop("slide", q[0], q[1], prng.uniform(0, 360))
+    for ang in prng.permutation(8) * 45:
+        r2 = q + 5.2 * np.array([math.cos(math.radians(ang)), math.sin(math.radians(ang))])
+        if poly.contains_point(r2) and dry(*r2):
+            add_prop("roundabout", r2[0], r2[1], prng.uniform(0, 360))
+            break
+
+# beaches: a few picnic tables and benches on the lawn behind the sand
+for bp in beach_pts:
+    if "Beach" not in bp["name"] or bp["name"] == "Beach":
+        continue
+    placed = []
+    for _ in range(400):
+        ang = prng.uniform(0, 2 * math.pi)
+        r = prng.uniform(25, 90)
+        x, z = bp["x"] + r * math.cos(ang), bp["z"] + r * math.sin(ang)
+        wd = water_dist[int(np.clip((D - z) / MPP, 0, MH - 1)), int(np.clip(x / MPP, 0, MW - 1))]
+        if not (14 <= wd <= 55) or not dry(x, z) or mask_at(feature_mask, x, z) == 2 or any(math.hypot(x - px, z - pz) < 14 for px, pz in placed):
+            continue
+        placed.append((x, z))
+        add_prop("picnic_" + "abc"[len(placed) % 3], x, z, prng.uniform(0, 360))
+        if len(placed) >= 5:
+            break
+
+# benches along the paved bike path and named footpaths
+bench_pts = []
+for pth in paths:
+    if pth["kind"] not in ("cycleway", "footway") or (pth["kind"] == "footway" and not pth["name"]):
+        continue
+    q = pth["pts"]
+    acc, nxt, side = 0.0, prng.uniform(60, 380), 1
+    for i in range(1, len(q)):
+        seg = q[i] - q[i - 1]
+        L = float(np.hypot(*seg))
+        if L < 1e-3:
+            continue
+        d = seg / L
+        while acc + L >= nxt and len(bench_pts) < 150:
+            t = (nxt - acc) / L
+            pos = q[i - 1] + seg * t + np.array([-d[1], d[0]]) * 2.8 * side
+            if dry(*pos) and all(math.hypot(pos[0] - bx, pos[1] - bz) > 25 for bx, bz in bench_pts) and not mask_at(road_mask, pos[0], pos[1]):
+                bench_pts.append((pos[0], pos[1]))
+                add_prop("bench", pos[0], pos[1], yaw_of(d))
+                side = -side
+            nxt += prng.uniform(300, 520)
+        acc += L
+
+# boat rental: a canoe rack with a couple of canoes beside it
+for bx, bz in boat_rentals:
+    ix, iz = int(np.clip(bx / MPP, 0, MW - 1)), int(np.clip((D - bz) / MPP, 0, MH - 1))
+    if water_mask[iz, ix]:
+        idx = ndimage.distance_transform_edt(water_mask, return_indices=True)[1]
+        iz, ix = idx[0][iz, ix], idx[1][iz, ix]
+        bx, bz = ix * MPP + 6, D - iz * MPP
+    add_prop("canoe_rack", bx, bz, 90)
+    add_prop("canoe_a", bx + 0, bz + 5, 90)
+    add_prop("canoe_b", bx + 0, bz - 5, 90)
+
+# parked cars: stalls laid out in each mapped lot, never on a mapped aisle
+car_roles, car_w = ["car_sedan", "car_hatch", "car_wagon", "car_muscle"], [0.31, 0.31, 0.31, 0.07]
+muscle = 0
+cars = 0
+for fl in features:
+    if fl["kind"] != "parking":
+        continue
+    pts = fl["pts"]
+    a, b = long_axes(pts)
+    c = pts.mean(0)
+    ua, ub = (pts - c) @ a, (pts - c) @ b
+    poly = MPath(pts)
+    occ = 0.5 if any(math.hypot(c[0] - bx, c[1] - bz) < 450 for bx, bz in beach_xy) else 0.26
+    lot = 0
+    for u in np.arange(ua.min() + 1.8, ua.max() - 1.2, 2.8):
+        for v in np.arange(ub.min() + 3.2, ub.max() - 2.4, 5.9):
+            if prng.random() > occ or lot >= 70 or cars >= 1100:
+                continue
+            ctr = c + a * u + b * v
+            corners = [ctr + a * sa * 1.05 + b * sb * 2.4 for sa in (-1, 1) for sb in (-1, 1)]
+            if not poly.contains_point(ctr) or not all(poly.contains_point(k) for k in corners):
+                continue
+            if any(mask_at(water_mask, k[0], k[1]) or mask_at(road_mask, k[0], k[1]) for k in corners + [ctr]):
+                continue
+            role = car_roles[int(prng.choice(4, p=car_w))]
+            if role == "car_muscle":
+                if muscle >= 30:
+                    role = "car_sedan"
+                muscle += 1
+            add_prop(role, ctr[0], ctr[1], yaw_of(b) + (180 if prng.random() < 0.5 else 0) + prng.uniform(-2.5, 2.5), prng.uniform(0.96, 1.04))
+            lot += 1
+            cars += 1
+
+with open(OUT / "props.bytes", "wb") as f:
+    blob = "\n".join(ROLES).encode()
+    f.write(struct.pack("<4sII", b"PROP", len(props), len(blob))); f.write(blob)
+    for role, x, z, yaw, sc in props:
+        f.write(struct.pack("<Bffff", role, x, z, yaw, sc))
+prop_counts = {ROLES[i]: sum(1 for p in props if p[0] == i) for i in range(len(ROLES))}
+prop_samples = {}
+for p in props:
+    key = "car" if ROLES[p[0]].startswith("car_") else "picnic" if ROLES[p[0]].startswith("picnic") else "canoe" if ROLES[p[0]].startswith("canoe") else ROLES[p[0]]
+    if len(prop_samples.setdefault(key, [])) < 4:
+        prop_samples[key].append({"x": round(p[1], 1), "z": round(p[2], 1), "yaw": round(p[3], 1)})
 
 # ---------- GTA-style map art (north up, ~3.2 m per pixel) ----------
 MAP_W = 2048; MAP_MPP = W / MAP_W; MAP_H = int(round(D / MAP_MPP))
@@ -414,6 +611,9 @@ world = {
     "landmarks": seen,
     "parking": parking_pts,
     "beaches": beach_pts,
+    "propCounts": prop_counts,
+    "propSamples": prop_samples,
+    "styleCounts": {str(k): v for k, v in style_counts.items()},
     "mapWidth": MAP_W, "mapHeight": MAP_H, "mapMetersPerPixel": MAP_MPP,
     "speciesCounts": counts,
     "sources": [dem_meta["source"], osm["source"], "USGS Annual NLCD 2024 land cover (Esri image service)"],
@@ -422,4 +622,5 @@ world = {
 on_feature = int(np.count_nonzero(mask_at(feature_mask, xs, zs)))
 assert on_feature == 0, f"{on_feature} trees stand on mown grass, sand, parking or buildings"
 print(f"W={W:.0f} D={D:.0f} lakes={len(lakes)} paths={len(paths)} trees={len(xs)} {counts}")
+print("props:", {k: v for k, v in prop_counts.items() if v}, "| building styles:", style_counts)
 print(f"features: {len(features)} outlines, parking points {len(parking_pts)}, beaches {[b['name'] for b in beach_pts]}")

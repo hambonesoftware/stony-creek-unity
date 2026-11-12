@@ -31,6 +31,7 @@ namespace StonyCreek.EditorTools
             MakeLakes(terrain, mats);
             MakePaths(terrain, mats);
             MakeLotsAndBuildings(terrain, mats);
+            MakeProps(terrain, mats);
             Atmosphere(out var sun);
 
             var camGo = new GameObject("Walker");
@@ -191,6 +192,7 @@ namespace StonyCreek.EditorTools
                 m.renderQueue = 1950;   // after the terrain, before the trails and roads that cross the lots
             });
             d["building"] = Mat("Stony/Building", "Building", m => m.SetTexture("_Variation", variation));
+            d["prop"] = Mat("Stony/PropVC", "Props");
             d["mapView"] = Mat("Stony/MapView", "MapView");
             d["mapOverlay"] = Mat("Stony/MapOverlay", "MapOverlay");
             return d;
@@ -509,7 +511,7 @@ namespace StonyCreek.EditorTools
                 if (o.kind != 4) continue;
                 var key = ((int)(o.bounds.center.x / Chunk), (int)(o.bounds.center.y / Chunk));
                 if (!chunks.TryGetValue(key, out var geo)) chunks[key] = geo = new BuildingMaker.Geo();
-                BuildingMaker.Add(geo, new List<Vector2>(o.pts), o.type, o.levels, (x, z) => H(td, x, z), rng);
+                BuildingMaker.Add(geo, new List<Vector2>(o.pts), o.type, o.levels, o.style, o.front, (x, z) => H(td, x, z), rng);
                 count++;
             }
             var root = new GameObject("Buildings");
@@ -535,6 +537,56 @@ namespace StonyCreek.EditorTools
                 for (int i = 1; i < all.Count; i++) AssetDatabase.AddObjectToAsset(all[i], path);
             }
             Debug.Log($"Stony Creek: {count} buildings, {tri.Count / 3} parking triangles.");
+        }
+
+        // ---------------- props: tables, benches, playgrounds, canoes, grills and parked cars ----------------
+        public const int PropLayer = 8;
+
+        static Mesh LoadPropMesh(string name)
+        {
+            var asset = Resources.Load<TextAsset>("Props/" + name);
+            if (asset == null) throw new System.Exception("Missing prop mesh " + name);
+            using var r = new BinaryReader(new MemoryStream(asset.bytes));
+            r.ReadBytes(4);
+            int nv = r.ReadInt32(), ni = r.ReadInt32();
+            var v = new Vector3[nv]; var n = new Vector3[nv]; var c = new Color32[nv]; var idx = new int[ni];
+            for (int i = 0; i < nv; i++) v[i] = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
+            for (int i = 0; i < nv; i++) n[i] = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
+            for (int i = 0; i < nv; i++) c[i] = new Color32(r.ReadByte(), r.ReadByte(), r.ReadByte(), r.ReadByte());
+            for (int i = 0; i < ni; i++) idx[i] = r.ReadInt32();
+            var m = new Mesh { name = "prop_" + name, indexFormat = nv > 65000 ? IndexFormat.UInt32 : IndexFormat.UInt16 };
+            m.vertices = v; m.normals = n; m.colors32 = c; m.triangles = idx;
+            m.RecalculateBounds();
+            return SaveMesh(m, "prop_" + name);
+        }
+
+        static void MakeProps(Terrain terrain, Dictionary<string, Material> mats)
+        {
+            var td = terrain.terrainData;
+            var meshes = new Dictionary<string, Mesh>();
+            using var r = new BinaryReader(new MemoryStream(File.ReadAllBytes("Assets/Resources/World/props.bytes")));
+            r.ReadBytes(4);
+            int count = r.ReadInt32(), blob = r.ReadInt32();
+            var roles = System.Text.Encoding.UTF8.GetString(r.ReadBytes(blob)).Split('\n');
+            var root = new GameObject("Props");
+            for (int i = 0; i < count; i++)
+            {
+                string role = roles[r.ReadByte()];
+                float x = r.ReadSingle(), z = r.ReadSingle(), yaw = r.ReadSingle(), sc = r.ReadSingle();
+                if (!meshes.TryGetValue(role, out var mesh)) meshes[role] = mesh = LoadPropMesh(role);
+                var go = new GameObject(role);
+                go.layer = PropLayer;
+                go.transform.SetParent(root.transform, false);
+                // lots are graded flat, so the terrain height under the centre is the right ground level for a whole car
+                go.transform.position = new Vector3(x, H(td, x, z) + (role.StartsWith("car_") ? 0.07f : 0f), z);
+                go.transform.rotation = Quaternion.Euler(0, yaw, 0);
+                go.transform.localScale = Vector3.one * sc;
+                go.AddComponent<MeshFilter>().sharedMesh = mesh;
+                var mr = go.AddComponent<MeshRenderer>();
+                mr.sharedMaterial = mats["prop"];
+                mr.shadowCastingMode = role.StartsWith("car_") || role == "canoe_rack" ? ShadowCastingMode.On : ShadowCastingMode.Off;
+            }
+            Debug.Log($"Stony Creek: {count} props placed.");
         }
 
         // ---------------- sky, sun, fog ----------------

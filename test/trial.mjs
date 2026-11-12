@@ -227,6 +227,28 @@ console.log('Stony Creek Unity trial');
       assert(Math.hypot(s.x - a.x, s.z - a.z) > 1, `did not move toward building ${i}`);
     }
   });
+  await check('props: picnic tables, benches, playground, canoes, grills and parked cars are placed', async () => {
+    const s = await state(page);
+    for (const [kind, i, shot] of [['car', 0, '12-cars'], ['picnic', 0, '13-picnic'], ['bench', 2, '14-bench'], ['slide', 0, '15-playground'], ['grill', 0, null], ['canoe', 0, '16-canoes']]) {
+      await cmd(page, `prop ${kind} ${i} 9 20`); await frames(page, 25);
+      if (shot) await page.screenshot({ path: `${OUT}/${shot}.png`, timeout: 120000 });
+    }
+    assert(s.props > 400, `only ${s.props} props placed`);
+  });
+  await check('props: parked cars sit in the lots and the camera really sees them', async () => {
+    await cmd(page, 'prop car 0 6 20'); await frames(page, 40);
+    const s = await state(page);
+    assert(s.propsNear >= 3, `only ${s.propsNear} props visible beside a row of parked cars`);
+  });
+  await check('buildings: the lodge, brick bathhouses and shelters stand on their footprints', async () => {
+    // the park office is shot from its front (west-south-west, toward the path) and from behind, to check the roof falls away from the front
+    for (const [style, idx, bearing, shot] of [[1, 0, '', '17-nature-center'], [2, 0, '', '18-bathhouse'], [2, 3, '', null], [3, 0, '', '19-shelter'], [4, 0, ' 255', '20-park-office-front'], [4, 0, ' 75', '21-park-office-rear']]) {
+      await cmd(page, `goto style ${style} ${idx}${bearing}`); await frames(page, 30);
+      const s = await state(page);
+      assert(!s.inBuilding && !s.wet, `style ${style} #${idx}: bad spot ${JSON.stringify([s.x, s.z])}`);
+      if (shot) await page.screenshot({ path: `${OUT}/${shot}.png`, timeout: 120000 });
+    }
+  });
   await check('desktop: no console errors', async () => {
     assert(page.errors.length === 0, page.errors.slice(0, 3).join(' | '));
   });
