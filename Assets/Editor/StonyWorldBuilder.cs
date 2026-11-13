@@ -89,7 +89,8 @@ namespace StonyCreek.EditorTools
             Import($"{Tex}/Generated/grass_blades.png", Leafy);
             Import($"{Tex}/Generated/water_normal.png", i => { i.textureType = TextureImporterType.NormalMap; i.wrapMode = TextureWrapMode.Repeat; });
             Import($"{Tex}/Generated/ground_variation.png", i => { i.sRGBTexture = false; i.wrapMode = TextureWrapMode.Repeat; i.textureCompression = TextureImporterCompression.Uncompressed; });
-            Import($"{Tex}/Generated/macro.png", i => { i.wrapMode = TextureWrapMode.Clamp; i.maxTextureSize = 1024; });
+            // the aerial photo: crunched to keep the WebGL download small
+            Import($"{Tex}/Generated/macro.png", i => { i.wrapMode = TextureWrapMode.Clamp; i.maxTextureSize = 4096; i.crunchedCompression = true; i.compressionQuality = 60; i.anisoLevel = 4; });
             Import("Assets/Resources/World/parkmap.png", i =>
             {
                 i.maxTextureSize = 4096; i.npotScale = TextureImporterNPOTScale.None; i.wrapMode = TextureWrapMode.Clamp;
@@ -144,6 +145,10 @@ namespace StonyCreek.EditorTools
                 m.SetTexture("_Macro", Load<Texture2D>($"{Tex}/Generated/macro.png"));
                 m.SetTexture("_Variation", variation);
                 m.SetVector("_WorldSize", new Vector4(info.width, info.depth, 0, 0));
+                // linear average colour of each ground texture, for matching the aerial photo's colour up close
+                var a = info.layerAverages;
+                if (a != null && a.Length == 12)
+                    for (int k = 0; k < 4; k++) m.SetVector("_Avg" + k, new Vector4(a[k * 3], a[k * 3 + 1], a[k * 3 + 2], 0));
             });
             Material Bark(string name, string tex, string normal, Color c) => Mat("Stony/Bark", name, m =>
             {

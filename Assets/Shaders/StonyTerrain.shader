@@ -1,4 +1,5 @@
-// Four-layer terrain: photo textures up close with anti-tiling, macro colour (from NLCD land cover) far away.
+// Four-layer terrain: photo textures up close with anti-tiling, coloured by the USDA NAIP aerial photo of the park,
+// which takes over completely in the distance.
 Shader "Stony/Terrain"
 {
     Properties
@@ -12,7 +13,7 @@ Shader "Stony/Terrain"
         [HideInInspector] _Normal1 ("Normal 1", 2D) = "bump" {}
         [HideInInspector] _Normal2 ("Normal 2", 2D) = "bump" {}
         [HideInInspector] _Normal3 ("Normal 3", 2D) = "bump" {}
-        _Macro ("Macro colour", 2D) = "gray" {}
+        _Macro ("Aerial photo colour", 2D) = "gray" {}
         _Variation ("Variation", 2D) = "gray" {}
         _WorldSize ("World size (x, z)", Vector) = (6540, 9224, 0, 0)
         _MacroRange ("Macro blend start, end", Vector) = (90, 650, 0, 0)
@@ -20,6 +21,11 @@ Shader "Stony/Terrain"
         _Tint1 ("Meadow tint", Color) = (0.96, 1.0, 0.8, 1)
         _Tint2 ("Forest tint", Color) = (0.74, 0.8, 0.7, 1)
         _Tint3 ("Sand tint", Color) = (1.12, 1.34, 1.36, 1)
+        _Avg0 ("Lawn texture average (linear)", Vector) = (0.1, 0.12, 0.05, 0)
+        _Avg1 ("Meadow texture average (linear)", Vector) = (0.12, 0.12, 0.07, 0)
+        _Avg2 ("Forest floor texture average (linear)", Vector) = (0.08, 0.06, 0.04, 0)
+        _Avg3 ("Sand texture average (linear)", Vector) = (0.25, 0.2, 0.14, 0)
+        _PhotoNear ("Photo colour strength up close", Range(0, 1)) = 0.75
     }
     SubShader
     {
@@ -34,6 +40,8 @@ Shader "Stony/Terrain"
         sampler2D _Macro, _Variation;
         float4 _WorldSize, _MacroRange;
         fixed4 _Tint0, _Tint1, _Tint2, _Tint3;
+        float4 _Avg0, _Avg1, _Avg2, _Avg3;
+        float _PhotoNear;
 
         struct Input { float2 tc; float3 worldPos; };
 
@@ -73,10 +81,22 @@ Shader "Stony/Terrain"
                        + Layer(_Splat3, uv3, m) * _Tint3.rgb * w.a;
             col *= 0.86 + 0.28 * var2;
 
+            // Up close the ground keeps its texture detail but takes its colour from the aerial photo: dry tan
+            // lawns, green fairways, worn sandy patches. The ratio photo / (what these layers average to) shifts the
+            // hue without flattening the texture. Not under trees: there the photo shows the canopy, not the ground.
+            float2 puv = world / _WorldSize.xy;
+            float3 photoSoft = tex2Dbias(_Macro, float4(puv, 0, 1.5)).rgb;
+            float3 avg = _Avg0.rgb * _Tint0.rgb * w.r + _Avg1.rgb * _Tint1.rgb * w.g + _Avg2.rgb * _Tint2.rgb * w.b + _Avg3.rgb * _Tint3.rgb * w.a;
+            float3 ratio = photoSoft / max(avg, 0.015);
+            // shift the hue freely but limit brightening: sunlit dry grass in the photo must not turn into glare
+            float rl = dot(ratio, float3(0.3, 0.5, 0.2));
+            ratio = clamp(ratio * (min(rl, 1.15) / max(rl, 0.001)), 0.45, 1.5);
+            col *= lerp(1, ratio, _PhotoNear * (1 - w.b));
+
             float dist = distance(_WorldSpaceCameraPos, IN.worldPos);
             float far = smoothstep(_MacroRange.x, _MacroRange.y, dist);
-            fixed3 macro = tex2D(_Macro, world / _WorldSize.xy).rgb;
-            col = lerp(col, macro * (0.9 + 0.2 * var), far);
+            fixed3 macro = tex2D(_Macro, puv).rgb;
+            col = lerp(col, macro * (0.94 + 0.12 * var), far);
 
             float nearN = 1 - smoothstep(25, 80, dist);
             fixed3 n = UnpackNormal(tex2D(_Normal0, uv0)) * w.r + UnpackNormal(tex2D(_Normal1, uv1)) * w.g

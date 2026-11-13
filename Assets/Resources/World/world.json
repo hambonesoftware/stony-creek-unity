@@ -504,14 +504,29 @@
  "mapHeight": 2888,
  "mapMetersPerPixel": 3.1933873550276552,
  "speciesCounts": {
-  "oak": 75769,
-  "maple": 103215,
-  "birch": 35263,
-  "pine": 37157
+  "oak": 142391,
+  "maple": 181572,
+  "birch": 53745,
+  "pine": 61374
  },
  "sources": [
   "USGS 3DEP ImageServer (real elevation, meters)",
   "\u00a9 OpenStreetMap contributors, Open Database License",
+  "USDA NAIP aerial photo via USGS The National Map (public domain)",
   "USGS Annual NLCD 2024 land cover (Esri image service)"
+ ],
+ "layerAverages": [
+  0.31595,
+  0.23267,
+  0.10342,
+  0.42026,
+  0.29869,
+  0.19676,
+  0.2867,
+  0.17192,
+  0.05115,
+  0.26581,
+  0.15142,
+  0.08854
  ]
 }

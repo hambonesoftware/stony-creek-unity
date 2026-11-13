@@ -12,7 +12,10 @@ This is the Unity counterpart of the three.js explorer in [sunward](https://gith
 | --- | --- | --- |
 | Walk | WASD or arrow keys | Left thumb anywhere on the lower left |
 | Look | Drag with the mouse, Q / E to turn | Drag on the right side |
-| Jog | Hold Shift, or J / the WALK button | WALK / JOG button |
+| Pace button | WALK → JOG → RUN → FLY → WALK | Same |
+| Jog (6 m/s) | Hold Shift, or J | Pace button |
+| Run (3× a jog) | R | Pace button |
+| Fly (10× a jog, up to 400 m above the ground) | F; you fly where you look, Space climbs, Ctrl drops. F again lands | Pace button; look up or down to climb or dive |
 | Map | M or the MAP button, Esc closes | Tap the radar or MAP |
 | Waypoint | Click the map, click it again to clear | Tap the map |
 | Map zoom / pan | Scroll wheel, drag, + / − | Pinch, drag |
@@ -26,12 +29,14 @@ The radar rotates with you, like GTA's. It shows the compass ring with N/E/S/W, 
 **Real data**
 - **Elevation:** USGS 3DEP, about 6–9 m grid. It's the same raster sunward's deploy downloads.
 - **Trails, roads, lakes, habitat outlines and named landmarks:** OpenStreetMap, © OpenStreetMap contributors (ODbL).
-- **Where forest, meadow, wetland, lawn and suburbs are:** USGS Annual NLCD 2024 land cover at 30 m, from the Esri image service.
+- **Ground colour and surface type:** the USDA NAIP aerial photo (public domain), taken at 1 m with a near-infrared band. Its colour paints the ground, so dry tan fields, green fairways and worn patches sit where they really are. The infrared band separates living plants from bare ground, which sorts the ground into mown grass, long or dry grass, tree canopy, sand at the lakeshore and pavement.
+- **Where trees stand:** wherever the photo shows tree canopy.
+- **Tree species and wetlands:** USGS Annual NLCD 2024 land cover at 30 m, from the Esri image service.
 - **Beaches, sand, parking lots, golf course, mown grass and building footprints:** exact OpenStreetMap outlines. Sand is painted on the mapped beaches, parking lots are paved and graded flat, and trees are cleared off all of them.
 
 **Illustrative, not surveyed**
-- **Tree positions:** the land cover says where woods are, but each of the roughly 240,000 trees is placed by a seeded generator. Species mixes follow sunward's per-area art direction.
-- **Grass and shrubs:** generated around you from the land cover.
+- **Individual trees:** the photo says where canopy is, but each of the roughly 440,000 trees inside it is placed by a seeded generator. Species mixes follow the land cover and sunward's per-area art direction.
+- **Grass and shrubs:** generated around you from the photo's surface types.
 - **Buildings:** the footprints are real, but the walls, roofs and windows are shapes raised from them. A few are hand-modelled from Street View reference (no imagery is used): the Nature Center (timber lodge), the beach bathhouses and restrooms (flat-roofed brick) and the picnic shelters (roof on posts). The park office is mid-century white with a 10° roof sloping to the rear, from a description rather than a photo. Everything else is a generic house or box.
 - **Benches, signs and fences:** not modelled.
 
@@ -47,6 +52,7 @@ The radar rotates with you, like GTA's. It shows the compass ring with N/E/S/W, 
 ```
 Tools/fetch_textures.py   downloads the Poly Haven CC0 textures
 Tools/fetch_features.py   downloads beaches, parking, buildings and golf outlines from OpenStreetMap
+Tools/fetch_naip.py       downloads the USDA NAIP aerial photo (colour + near-infrared, 1 m) from USGS The National Map
 Tools/make_textures.py    grass blades, birch bark, water ripples, ground variation
 Tools/prepare_world.py    projects the GIS data, carves lake beds, places trees, paints the map
 Assets/Editor/            builds the terrain, trails, lakes, tree models and scene; batch web build
@@ -60,6 +66,7 @@ To rebuild, with Unity **6000.3.28f1** and Web Build Support installed:
 ```bash
 python Tools/fetch_textures.py
 python Tools/fetch_features.py
+python Tools/fetch_naip.py
 python Tools/make_textures.py
 python Tools/prepare_world.py
 "C:/Program Files/Unity/Hub/Editor/6000.3.28f1/Editor/Unity.exe" -batchmode -quit -projectPath . -buildTarget WebGL -executeMethod StonyCreek.EditorTools.StonyBuild.BuildWeb -logFile web-build.log
@@ -69,7 +76,7 @@ npm test
 
 Leave out `-nographics`, because the tree billboards are rendered on the GPU during the build. The web build lands in `Builds/Web`. GitHub Pages serves the `gh-pages` branch, which holds a copy of that folder.
 
-The `Data/` folder holds the inputs: the elevation raster and OSM extract from sunward's Pages site, and the NLCD tile.
+The `Data/` folder holds the inputs: the elevation raster and OSM extract from sunward's Pages site, and the NLCD tile. The aerial photo (about 160 MB) is not committed; `Tools/fetch_naip.py` downloads it.
 
 ### Swapping in Asset Store or SpeedTree trees
 
@@ -82,6 +89,7 @@ The renderer draws with GPU instancing, so replacement materials must have insta
 ## Credits
 
 - **Terrain, trails, lakes, buildings and parking:** © OpenStreetMap contributors (ODbL); USGS 3DEP elevation; USGS NLCD land cover.
+- **Aerial photo:** USDA Farm Service Agency NAIP imagery, via USGS The National Map (public domain).
 - **Ground and bark photo textures:** [Poly Haven](https://polyhaven.com), CC0.
 - **Props** (picnic tables, bench, playground, canoes, grill, cars), from the [Patch](https://patch.gg/create/toolbox/assets) free asset library. Polyfork models are CC BY 4.0 (credit: Polyfork); the KayKit cars are CC0:
   - `picnic_a` — CC BY · credit Polyfork ([polyfork:picnic-table-4ee33a](https://patch.gg/create/toolbox/assets/polyfork:picnic-table-4ee33a))

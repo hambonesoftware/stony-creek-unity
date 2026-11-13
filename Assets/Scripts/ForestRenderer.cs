@@ -20,9 +20,12 @@ namespace StonyCreek
 
         public Species[] species;
         public Terrain terrain;
-        public float nearDistance = 80f;
+        public float nearDistance = 64f;   // full 3D trees inside this, billboards beyond
         public float fadeBand = 14f;
         public float farDistance = 1150f;
+        // only the closest full trees cast shadows; past this they are lit but shadowless (the photo-placed forest is dense)
+        public float shadowDistance = 30f;
+        public float thinStart = 220f;   // beyond this the billboard forest is drawn thinner with distance
         public float[] trunkRadius = { 0.4f, 0.34f, 0.2f, 0.32f };
 
         const float CellSize = 64f;
@@ -30,6 +33,7 @@ namespace StonyCreek
         List<Matrix4x4>[][] cells;      // [cell][species]
         readonly List<Matrix4x4>[] nearList = new List<Matrix4x4>[4];
         readonly List<Matrix4x4>[] farList = new List<Matrix4x4>[4];
+        readonly List<Matrix4x4>[] nearPlain = new List<Matrix4x4>[4];   // full trees too far to cast a shadow
         Vector3 lastNearPos = new(1e9f, 0, 0), lastFarPos = new(1e9f, 0, 0);
         float lastYaw = 999;
         public int TreeCount { get; private set; }
@@ -42,7 +46,7 @@ namespace StonyCreek
             cols = Mathf.CeilToInt(data.info.width / CellSize);
             rows = Mathf.CeilToInt(data.info.depth / CellSize);
             cells = new List<Matrix4x4>[cols * rows][];
-            for (int s = 0; s < 4; s++) { nearList[s] = new List<Matrix4x4>(2048); farList[s] = new List<Matrix4x4>(16384); }
+            for (int s = 0; s < 4; s++) { nearList[s] = new List<Matrix4x4>(2048); nearPlain[s] = new List<Matrix4x4>(2048); farList[s] = new List<Matrix4x4>(16384); }
 
             var bytes = Resources.Load<TextAsset>("World/trees").bytes;
             using var r = new BinaryReader(new MemoryStream(bytes));
@@ -120,7 +124,15 @@ namespace StonyCreek
                     {
                         var list = cell[s];
                         if (list == null) continue;
-                        if (frustum == null) { into[s].AddRange(list); continue; }
+                        if (frustum == null)
+                        {
+                            // far billboards: cells hold their trees in random order, so drawing the first part of each
+                            // list thins the distant forest evenly. Full density out to thinStart, a third at the horizon.
+                            int n = list.Count;
+                            if (dist > thinStart) n = Mathf.CeilToInt(n * Mathf.Max(0.34f, thinStart / dist));
+                            for (int i = 0; i < n; i++) into[s].Add(list[i]);
+                            continue;
+                        }
                         foreach (var m in list)
                         {
                             var p = new Vector3(m.m03, m.m13, m.m23);
@@ -131,6 +143,24 @@ namespace StonyCreek
                         }
                     }
                 }
+        }
+
+        void SplitShadowed(Vector3 cam)
+        {
+            float sd = shadowDistance * shadowDistance;
+            for (int s = 0; s < 4; s++)
+            {
+                nearPlain[s].Clear();
+                var list = nearList[s];
+                int keep = 0;
+                for (int i = 0; i < list.Count; i++)
+                {
+                    var m = list[i];
+                    float tx = m.m03 - cam.x, tz = m.m23 - cam.z;
+                    if (tx * tx + tz * tz <= sd) list[keep++] = m; else nearPlain[s].Add(m);
+                }
+                list.RemoveRange(keep, list.Count - keep);
+            }
         }
 
         void LateUpdate()
@@ -148,6 +178,7 @@ namespace StonyCreek
                 var planes = GeometryUtility.CalculateFrustumPlanes(camera);
                 camera.fieldOfView = fov;
                 Collect(cam, 0, nearDistance, nearList, planes);
+                SplitShadowed(cam);
                 lastNearPos = cam; lastYaw = yaw;
             }
             if ((cam - lastFarPos).sqrMagnitude > 100f)
@@ -167,6 +198,14 @@ namespace StonyCreek
                     Graphics.RenderMeshInstanced(bark, sp.mesh, 0, nearList[s]);
                     Graphics.RenderMeshInstanced(leaves, sp.mesh, 1, nearList[s]);
                     near += nearList[s].Count;
+                }
+                if (nearPlain[s].Count > 0)
+                {
+                    var bark = new RenderParams(sp.bark) { shadowCastingMode = ShadowCastingMode.Off, receiveShadows = true, worldBounds = new Bounds(cam, Vector3.one * 4000) };
+                    var leaves = new RenderParams(sp.leaves) { shadowCastingMode = ShadowCastingMode.Off, receiveShadows = true, worldBounds = bark.worldBounds };
+                    Graphics.RenderMeshInstanced(bark, sp.mesh, 0, nearPlain[s]);
+                    Graphics.RenderMeshInstanced(leaves, sp.mesh, 1, nearPlain[s]);
+                    near += nearPlain[s].Count;
                 }
                 if (farList[s].Count > 0)
                 {

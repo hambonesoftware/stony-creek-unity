@@ -102,7 +102,9 @@ namespace StonyCreek
             if (data == null) return;
             if (Input.GetKeyDown(KeyCode.M) && walker.Started) ToggleMap(!MapOpen);
             if (Input.GetKeyDown(KeyCode.Escape) && MapOpen) ToggleMap(false);
-            if (Input.GetKeyDown(KeyCode.J)) walker.Jog = !walker.Jog;
+            if (Input.GetKeyDown(KeyCode.J)) walker.TogglePace(Walker.Pace.Jog);
+            if (Input.GetKeyDown(KeyCode.R)) walker.TogglePace(Walker.Pace.Run);
+            if (Input.GetKeyDown(KeyCode.F)) walker.TogglePace(Walker.Pace.Fly);
             if (Input.GetKeyDown(KeyCode.C)) ClearWaypoint();
             if (Input.GetKeyDown(KeyCode.H)) showHelp = !showHelp;
             if (MapOpen)
@@ -120,7 +122,7 @@ namespace StonyCreek
             }
 
             // radar range opens up when jogging
-            float wantSpan = walker.Jog || Input.GetKey(KeyCode.LeftShift) ? 280 : 180;
+            float wantSpan = walker.Mode == Walker.Pace.Fly ? 900 + walker.Altitude * 2 : walker.Mode == Walker.Pace.Run ? 520 : walker.Jog || Input.GetKey(KeyCode.LeftShift) ? 280 : 180;
             miniSpan = Mathf.Lerp(miniSpan, wantSpan, 1 - Mathf.Exp(-Time.deltaTime * 2));
 
             if (HasWaypoint)
@@ -179,7 +181,7 @@ namespace StonyCreek
                     pressedButtonId = int.MinValue;
                     if (pressedRect.Contains(e.pos) || Hit(miniRect, e.pos, S(10)) && pressedRect == miniRect)
                     {
-                        if (pressedRect == jogButton) walker.Jog = !walker.Jog;
+                        if (pressedRect == jogButton) walker.NextPace();
                         else ToggleMap(true);
                     }
                 }
@@ -383,7 +385,7 @@ namespace StonyCreek
 
             // buttons
             Button(mapButton, "MAP", false);
-            Button(jogButton, walker.Jog ? "JOG" : "WALK", walker.Jog);
+            Button(jogButton, walker.Mode == Walker.Pace.Fly ? "FLY" : walker.Mode == Walker.Pace.Run ? "RUN" : walker.Jog ? "JOG" : "WALK", walker.Mode != Walker.Pace.Walk);
             if (walker.TouchMode && walker.StickActive)
             {
                 float rad = S(60);
@@ -395,8 +397,8 @@ namespace StonyCreek
             if (showHelp)
             {
                 string help = walker.TouchMode
-                    ? "Left thumb: walk  ·  Drag right side: look  ·  Tap the radar for the map"
-                    : "WASD walk  ·  Drag to look  ·  Shift / J jog  ·  M map  ·  H hide help";
+                    ? "Left thumb: walk  ·  Drag right side: look  ·  WALK button: jog, run, fly  ·  Tap the radar for the map"
+                    : "WASD walk  ·  Drag to look  ·  Shift / J jog  ·  R run  ·  F fly (Space up, Ctrl down)  ·  M map  ·  H hide help";
                 var hrect = new Rect(Screen.width / 2f - S(300), Screen.height - S(40), S(600), S(26));
                 Text(hrect, help, small, new Color(1, 1, 1, 0.85f), TextAnchor.MiddleCenter);
             }
@@ -546,7 +548,7 @@ namespace StonyCreek
                 "Unity prototype. Real USGS elevation, OpenStreetMap trails and lakes, and USGS land cover deciding where the 240,000 trees grow. Trees are illustrative, not surveyed.",
                 body, new Color(0.88f, 0.92f, 0.86f), TextAnchor.UpperLeft);
             Text(new Rect(r.x + S(28), r.y + S(186), w - S(56), S(50)),
-                walker.TouchMode ? "Left thumb walks · drag right side to look · tap the radar for the map" : "WASD to walk · drag to look · Shift to jog · M for the map",
+                walker.TouchMode ? "Left thumb walks · drag right side to look · the WALK button jogs, runs and flies · tap the radar for the map" : "WASD to walk · drag to look · Shift to jog · R to run · F to fly · M for the map",
                 body, new Color(0.75f, 0.85f, 0.75f), TextAnchor.UpperLeft);
             var b = new Rect(r.x + S(28), r.yMax - S(64), S(220), S(46));
             Panel(b, new Color(0.86f, 0.92f, 0.8f, 1), S(10));

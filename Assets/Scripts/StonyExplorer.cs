@@ -38,7 +38,7 @@ namespace StonyCreek
         static string StonyQuery() => "";
 #endif
         int quality = -1;      // from ?q=0|1|2, or -1 = automatic
-        float maxFar, adaptTimer = 4;
+        float maxFar, maxNear, adaptTimer = 4;
 
         void Awake()
         {
@@ -55,11 +55,13 @@ namespace StonyCreek
             }
             else if (mobile && quality != 2)
             {
-                forest.nearDistance = 58; forest.farDistance = 820;
+                forest.nearDistance = 50; forest.farDistance = 820;
                 grass.radius = 30; grass.densityScale = 0.6f;
                 QualitySettings.shadowDistance = 42;
             }
+            else if (quality != 2) forest.nearDistance = Mathf.Min(forest.nearDistance, 64);   // the photo-placed woods are dense
             maxFar = forest.farDistance;
+            maxNear = forest.nearDistance;
             // small props vanish at a distance: cars and tables are invisible past a few hundred metres anyway
             var cull = new float[32];
             cull[8] = mobile ? 170f : 260f;
@@ -109,7 +111,14 @@ namespace StonyCreek
             if (quality < 0 && walker.Started && (adaptTimer -= Time.unscaledDeltaTime) <= 0)
             {
                 adaptTimer = 2;
-                if (fps < 24 && forest.farDistance > 460) { forest.farDistance *= 0.85f; grass.radius = Mathf.Max(26, grass.radius * 0.92f); forest.Refresh(); }
+                // the horizon comes in first; in dense woods the full close-up trees follow once the horizon is short
+                if (fps < 26 && (forest.farDistance > 460 || forest.nearDistance > 44))
+                {
+                    if (forest.farDistance > 460) { forest.farDistance *= 0.85f; grass.radius = Mathf.Max(26, grass.radius * 0.92f); }
+                    if (forest.nearDistance > 44) forest.nearDistance *= 0.9f;
+                    forest.Refresh();
+                }
+                else if (fps > 50 && forest.nearDistance < maxNear) { forest.nearDistance = Mathf.Min(maxNear, forest.nearDistance * 1.06f); forest.Refresh(); }
                 else if (fps > 50 && forest.farDistance < maxFar) { forest.farDistance = Mathf.Min(maxFar, forest.farDistance * 1.08f); forest.Refresh(); }
             }
             if ((reportTimer -= Time.unscaledDeltaTime) <= 0)
@@ -118,13 +127,13 @@ namespace StonyCreek
                 var p = walker.transform.position;
                 var fwd = walker.transform.forward;
                 StonyReport(string.Format(CultureInfo.InvariantCulture,
-                    "{{\"ready\":true,\"started\":{0},\"x\":{1:0.0},\"y\":{2:0.0},\"z\":{3:0.0},\"yaw\":{4:0.0},\"pitch\":{5:0.0},\"fwdX\":{6:0.000},\"fwdZ\":{7:0.000},\"fps\":{8:0.0},\"trees\":{9},\"near\":{10},\"far\":{11},\"grass\":{12},\"mapOpen\":{13},\"waypoint\":{14},\"route\":{15:0},\"jog\":{16},\"touch\":{17},\"ui\":{18:0.00},\"screen\":[{19},{20}],\"mini\":[{21:0},{22:0},{23:0}],\"mapBtn\":[{24:0},{25:0}],\"jogBtn\":[{26:0},{27:0}],\"buttons\":{28},\"frame\":{29},\"farDistance\":{30:0},\"wet\":{31},\"feature\":{32},\"inBuilding\":{33},\"props\":{34},\"propsNear\":{35}}}",
+                    "{{\"ready\":true,\"started\":{0},\"x\":{1:0.0},\"y\":{2:0.0},\"z\":{3:0.0},\"yaw\":{4:0.0},\"pitch\":{5:0.0},\"fwdX\":{6:0.000},\"fwdZ\":{7:0.000},\"fps\":{8:0.0},\"trees\":{9},\"near\":{10},\"far\":{11},\"grass\":{12},\"mapOpen\":{13},\"waypoint\":{14},\"route\":{15:0},\"jog\":{16},\"touch\":{17},\"ui\":{18:0.00},\"screen\":[{19},{20}],\"mini\":[{21:0},{22:0},{23:0}],\"mapBtn\":[{24:0},{25:0}],\"jogBtn\":[{26:0},{27:0}],\"buttons\":{28},\"frame\":{29},\"farDistance\":{30:0},\"wet\":{31},\"feature\":{32},\"inBuilding\":{33},\"props\":{34},\"propsNear\":{35},\"pace\":\"{36}\",\"alt\":{37:0.0}}}",
                     walker.Started ? "true" : "false", p.x, p.y, p.z, walker.Yaw, walker.Pitch, fwd.x, fwd.z, fps,
                     forest.TreeCount, forest.NearDrawn, forest.FarDrawn, grass.GrassDrawn,
                     hud.MapOpen ? "true" : "false", hud.HasWaypoint ? "true" : "false", hud.RouteLength,
                     walker.Jog ? "true" : "false", walker.TouchMode ? "true" : "false", hud.UiScale, Screen.width, Screen.height,
                     hud.MiniRect.center.x, hud.MiniRect.center.y, hud.MiniRect.width, hud.MapButtonRect.center.x, hud.MapButtonRect.center.y,
-                    hud.JogButtonRect.center.x, hud.JogButtonRect.center.y, hud.MapOpen ? hud.ButtonsJson : "[]", Time.frameCount, forest.farDistance, data.LakeAt(p.x, p.z) != null ? "true" : "false", data.FeatureAt(p.x, p.z), data.InBuilding(p.x, p.z) ? "true" : "false", propRenderers.Length, CountVisibleProps()));
+                    hud.JogButtonRect.center.x, hud.JogButtonRect.center.y, hud.MapOpen ? hud.ButtonsJson : "[]", Time.frameCount, forest.farDistance, data.LakeAt(p.x, p.z) != null ? "true" : "false", data.FeatureAt(p.x, p.z), data.InBuilding(p.x, p.z) ? "true" : "false", propRenderers.Length, CountVisibleProps(), walker.Mode.ToString().ToLowerInvariant(), walker.Altitude));
             }
         }
 
@@ -142,6 +151,7 @@ namespace StonyCreek
                 case "waypoint": hud.SetWaypoint(new Vector2(F(1), F(2))); break;
                 case "clear": hud.ClearWaypoint(); break;
                 case "time": SetSun(F(1)); break;
+                case "pace": walker.Mode = (Walker.Pace)System.Enum.Parse(typeof(Walker.Pace), a[1], true); break;
                 case "shore": Shore(); break;
                 case "goto": Goto(a[1], int.Parse(a[2]), a.Length > 3 ? int.Parse(a[3]) : 0, a.Length > 4 ? F(4) : float.NaN); break;
                 case "prop": GoProp(a[1], int.Parse(a[2]), a.Length > 3 ? F(3) : 9f, a.Length > 4 ? F(4) : 0f); break;

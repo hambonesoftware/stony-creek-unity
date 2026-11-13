@@ -1,0 +1,15 @@
+{
+ "source": "USDA NAIP via USGS The National Map (public domain)",
+ "service": "https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPImagery/ImageServer/exportImage",
+ "metresPerPixel": 1.0,
+ "width": 6540,
+ "height": 9224,
+ "bounds": {
+  "west": -83.125,
+  "south": 42.704,
+  "east": -83.045,
+  "north": 42.787
+ },
+ "rowZero": "north",
+ "retrievedAt": "2026-11-13T01:02:31Z"
+}

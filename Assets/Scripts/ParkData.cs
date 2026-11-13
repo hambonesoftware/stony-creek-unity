@@ -16,6 +16,7 @@ namespace StonyCreek
         public NamedPoint[] places, landmarks, parking, beaches;
         public PropSamples propSamples;
         public string[] sources;
+        public float[] layerAverages;   // lawn, meadow, forest floor, sand: linear RGB of each ground texture
     }
 
     public enum PathKind : byte { Path, Footway, Cycleway, Track, Service, Residential }

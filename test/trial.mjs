@@ -164,17 +164,46 @@ console.log('Stony Creek Unity trial');
     await page.mouse.click(p.x, p.y);
     await until(page, () => !window.stonyState.mapOpen, null, 30000, 'map closed by button');
   });
-  await check('desktop: MAP and WALK/JOG buttons', async () => {
+  await check('desktop: MAP button, and the pace button cycles walk, jog, run, fly', async () => {
     let s = await state(page);
     let p = await css(page, s.jogBtn[0], s.jogBtn[1]);
-    await page.mouse.click(p.x, p.y);
-    await until(page, () => window.stonyState.jog, null, 30000, 'jog on');
-    await page.mouse.click(p.x, p.y);
-    await until(page, () => !window.stonyState.jog, null, 30000, 'jog off');
+    for (const want of ['jog', 'run', 'fly', 'walk']) {
+      await page.mouse.click(p.x, p.y);
+      await until(page, w => window.stonyState.pace === w, want, 30000, `pace ${want}`);
+    }
     p = await css(page, s.mapBtn[0], s.mapBtn[1]);
     await page.mouse.click(p.x, p.y);
     await until(page, () => window.stonyState.mapOpen, null, 30000, 'map by button');
     await holdKeys(page, ['Escape'], 2);
+  });
+  await check('desktop: R runs 3x a jog, F flies 10x a jog, Space climbs, and landing brings you down', async () => {
+    // open dry ground facing north, no trees, water or buildings in the way
+    await cmd(page, 'teleport 3300 2900 0'); await frames(page, 5);
+    try {
+    const leg = async (pace, n) => {
+      await cmd(page, `pace ${pace}`); await frames(page, 2);
+      // distance over the same number of frames, like the other movement checks
+      const a = await state(page);
+      await holdKeys(page, ['KeyW'], n);
+      const b = await state(page);
+      return Math.hypot(b.x - a.x, b.z - a.z);
+    };
+    const jog = await leg('jog', 30), run = await leg('run', 30);
+    await cmd(page, 'teleport 3300 2900 0'); await frames(page, 3);
+    const fly = await leg('fly', 30);
+    assert(run > jog * 2.2 && run < jog * 4.2, `run ${run.toFixed(1)} m vs jog ${jog.toFixed(1)} m over the same frames`);
+    assert(fly > jog * 6.5, `fly ${fly.toFixed(1)} m vs jog ${jog.toFixed(1)} m over the same frames`);
+    await holdKeys(page, ['Space'], 40);
+    const up = await state(page);
+    assert(up.alt > 8, `only ${up.alt} m up after holding Space`);
+    await page.screenshot({ path: `${OUT}/22-flying.png`, timeout: 120000 });
+    await page.keyboard.press('KeyF');
+    await until(page, () => window.stonyState.pace === 'walk' && window.stonyState.alt < 2.2, null, 60000, 'landed');
+    await page.keyboard.press('KeyR');
+    await until(page, () => window.stonyState.pace === 'run', null, 30000, 'R runs');
+    await page.keyboard.press('KeyR');
+    await until(page, () => window.stonyState.pace === 'walk', null, 30000, 'R again walks');
+    } finally { await cmd(page, 'pace walk'); await frames(page, 2); }
   });
   await check('desktop: fast travel to each named place', async () => {
     for (let i = 0; i < 5; i++) {
@@ -308,13 +337,13 @@ for (const [w, h, label] of [[844, 390, 'landscape'], [390, 844, 'portrait']]) {
     const turned = ((b.yaw - a.yaw) + 540) % 360 - 180;
     assert(Math.hypot(b.x - a.x, b.z - a.z) > 0.6 && turned > 10, `moved ${Math.hypot(b.x - a.x, b.z - a.z).toFixed(2)} m, turned ${turned.toFixed(1)}°`);
   });
-  await check(`phone ${label}: JOG button toggles`, async () => {
+  await check(`phone ${label}: pace button cycles walk, jog, run, fly`, async () => {
     const s = await state(page);
     const p = await css(page, s.jogBtn[0], s.jogBtn[1]);
-    await tap(p.x, p.y);
-    await until(page, () => window.stonyState.jog, null, 30000, 'jog on');
-    await tap(p.x, p.y);
-    await until(page, () => !window.stonyState.jog, null, 30000, 'jog off');
+    for (const want of ['jog', 'run', 'fly', 'walk']) {
+      await tap(p.x, p.y);
+      await until(page, w => window.stonyState.pace === w, want, 30000, `pace ${want}`);
+    }
   });
   await check(`phone ${label}: tapping the radar opens the map`, async () => {
     const s = await state(page);

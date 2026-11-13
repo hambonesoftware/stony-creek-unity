@@ -6,11 +6,12 @@ Inputs (Data/):
   stony-foliage-zones.json   sunward's per-area tree mix (art direction)
   nlcd.tif                   USGS Annual NLCD 2024 land cover, 30 m
   stony-creek-features.json  OpenStreetMap beaches, sand, parking lots, buildings, golf, mown grass, woods, boat rental
+  naip_rgb.png, naip_nir.png USDA NAIP aerial photo, 1 m, colour + near-infrared (Tools/fetch_naip.py)
 
 Outputs:
   Data/terrain_heights.r16         1025x1025 uint16, row 0 = south, lakes carved
   Data/splat.png                   terrain layer weights RGBA = lawn, meadow, forest floor, sand (row 0 = north)
-  Data/macro.png                   far-distance ground colour (row 0 = north)
+  Assets/Textures/Generated/macro.png  the aerial photo as ground colour, 4096 x 4096 (row 0 = north)
   Assets/Resources/World/*.bytes   trees, paths, lakes, land cover for runtime
   Assets/Resources/World/parkmap.png  GTA-style map art (north up)
   Assets/Resources/World/world.json   bounds, sizes, places, landmarks
@@ -200,18 +201,71 @@ def mask_at(mask, x, z):
     return mask[r, c]
 
 
+# ---------- aerial photo (Tools/fetch_naip.py): USDA NAIP, 1 m, red/green/blue + near-infrared ----------
+# The photo decides what the ground is wherever OpenStreetMap does not say: green mown grass vs dry meadow,
+# bare sand, pavement and tree canopy. Measured on the park's mapped areas, the classes separate cleanly:
+#   mown grass  NDVI 0.23  brightness 134  texture 2.4 (smooth)
+#   woods       NDVI 0.40  brightness  92  texture 9.1 (rough, dark, shadowed crowns)
+#   sand        NDVI -0.02 brightness 190  warm (red well above blue)
+#   pavement    NDVI -0.04 brightness 187  grey
+# NDVI = (near-infrared - red) / (near-infrared + red): living plants reflect near-infrared strongly.
+Image.MAX_IMAGE_PIXELS = None
+photo_rgb_img = Image.open(DATA / "naip_rgb.png").convert("RGB")
+photo_nir_img = Image.open(DATA / "naip_nir.png").convert("L")
+assert photo_rgb_img.size == (int(round(W)), int(round(D))), f"photo is {photo_rgb_img.size}, expected about {W:.0f} x {D:.0f}"
+
+
+def photo_features(w, h):
+    """Photo measurements averaged into a w x h grid over the park box (row 0 = north)."""
+    rgb = np.asarray(photo_rgb_img.resize((w, h), Image.BOX), np.float32)
+    nir = np.asarray(photo_nir_img.resize((w, h), Image.BOX), np.float32)
+    lum1 = np.asarray(photo_rgb_img.convert("L"), np.float32)
+    m1 = np.asarray(Image.fromarray(lum1).resize((w, h), Image.BOX), np.float32)
+    m2 = np.asarray(Image.fromarray(lum1 * lum1).resize((w, h), Image.BOX), np.float32)
+    texture = ndimage.uniform_filter(np.sqrt(np.clip(m2 - m1 * m1, 0, None)), 3)
+    r, b = rgb[..., 0], rgb[..., 2]
+    return {"rgb": rgb, "ndvi": (nir - r) / (nir + r + 1e-3), "lum": rgb.mean(-1), "warm": r - b, "green": rgb[..., 1] - r, "texture": texture}
+
+
+def ss(e0, e1, x):
+    t = np.clip((x - e0) / (e1 - e0), 0, 1)
+    return t * t * (3 - 2 * t)
+
+
+def photo_cover(p):
+    """Soft class weights from photo measurements: canopy, lawn, meadow, sand, pavement (each 0..1, sum 1)."""
+    veg = ss(0.04, 0.16, p["ndvi"])
+    canopy = veg * ss(0.27, 0.38, p["ndvi"]) * ss(128, 100, p["lum"]) * ss(4.0, 7.0, p["texture"])
+    grass = veg - canopy
+    # mown grass is green (green above red) and smooth; dry or long grass reads tan and rougher
+    lawn = grass * ss(-6, 8, p["green"]) * ss(0.1, 0.22, p["ndvi"]) * ss(8, 4.5, p["texture"])
+    meadow = grass - lawn
+    bare = 1 - veg
+    sand = bare * ss(140, 175, p["lum"]) * ss(14, 26, p["warm"])
+    pave = bare - sand
+    return canopy, lawn, meadow, sand, pave
+
+
+# on the 2 m mask grid: tree canopy for tree placement, classes for the runtime grass
+pf2 = photo_features(MW, MH)
+canopy2, lawn2, meadow2, sand2, pave2 = photo_cover(pf2)
+canopy2 = ndimage.gaussian_filter(canopy2, 1.2)
+
+
 # ---------- terrain splat weights (2048 x 2048 cells over W x D) ----------
 S = 2048
 gx, gz = np.meshgrid((np.arange(S) + 0.5) / S * W, (1 - (np.arange(S) + 0.5) / S) * D)  # row 0 = north
 cls = landcover(gx, gz)
-lawn = np.isin(cls, list(LAWN)).astype(np.float32)
-meadow = np.isin(cls, list(MEADOW)).astype(np.float32)
-forest = np.isin(cls, list(FOREST)).astype(np.float32)
-sand = np.isin(cls, list(SAND)).astype(np.float32)
 noise = ndimage.gaussian_filter(rng.standard_normal((S, S)), 12)
 noise = noise / (np.abs(noise).max() + 1e-6)
-weights = np.stack([lawn + 0.25 * np.clip(noise, 0, 1) * meadow, meadow + 0.3 * np.clip(-noise, 0, 1) * lawn, forest, sand * 1.5], -1)
-weights = ndimage.gaussian_filter(weights, sigma=(3.2, 3.2, 0))
+pfS = photo_features(S, S)
+canopyS, lawnS, meadowS, sandS, paveS = photo_cover(pfS)
+# pavement and rooftops have no layer of their own: the neutral meadow layer, coloured grey by the photo
+# Bright bare ground away from the water is late-summer dry grass or dirt, not sand: in a park the real sand is
+# the lakeshore and the mapped beaches and bunkers (which OSM paints below). So photo sand only near water.
+shore = np.asarray(Image.fromarray(ndimage.binary_dilation(water_mask, iterations=30).astype(np.uint8) * 255).resize((S, S), Image.BILINEAR), np.float32) / 255
+weights = np.stack([lawnS, meadowS + paveS + sandS * (1 - shore), canopyS, sandS * shore * 1.3], -1).astype(np.float32)
+weights = ndimage.gaussian_filter(weights, sigma=(1.0, 1.0, 0))
 # mapped features are exact: sand on the mapped beaches and bunkers, lawn on mown grass, parking and around buildings
 fm = mask_at(feature_mask, gx, gz)
 wd = mask_at(wood_mask, gx, gz) & (fm == 0)
@@ -223,21 +277,26 @@ weights[weights.sum(-1) < 1e-4, 0] = 1
 weights /= weights.sum(-1, keepdims=True)
 Image.fromarray(np.round(weights * 255).astype(np.uint8), "RGBA").save(DATA / "splat.png")
 
-# far-distance colours: forest reads as canopy from afar
-MACRO = {41: (62, 86, 42), 42: (40, 64, 38), 43: (55, 78, 40), 90: (66, 88, 48), 52: (118, 116, 70), 71: (139, 136, 84),
-         81: (132, 136, 76), 82: (126, 118, 82), 95: (104, 120, 78), 21: (104, 128, 70), 22: (110, 124, 84), 23: (128, 128, 112),
-         24: (136, 134, 124), 31: (170, 156, 124), 11: (92, 118, 96)}
-macro = np.zeros((S, S, 3), np.float32)
-for k, col in MACRO.items():
-    macro[cls == k] = col
-macro = ndimage.gaussian_filter(macro, sigma=(2.4, 2.4, 0)) * (1 + 0.08 * noise[..., None])
-macro[wd] = (60, 84, 42)
-macro[fm == 1] = (104, 134, 68)
-macro[fm == 2] = (190, 174, 136)
-macro[fm == 3] = (104, 104, 102)
-macro[fm == 4] = (112, 102, 92)
-macro = ndimage.gaussian_filter(macro, sigma=(0.8, 0.8, 0))
-Image.fromarray(np.clip(macro, 0, 255).astype(np.uint8), "RGB").resize((1024, 1024), Image.LANCZOS).save(DATA / "macro.png")
+# ground colour = the aerial photo, a touch softer and less saturated than the raw scan so it sits with the
+# lit ground textures (the photo already carries the sun's light and the trees' shadows)
+macro = np.asarray(photo_rgb_img.resize((4096, 4096), Image.LANCZOS), np.float32)
+grey = macro.mean(-1, keepdims=True)
+macro = grey + (macro - grey) * 0.86
+macro = 255 * np.power(np.clip(macro / 255, 0, 1), 1.06)
+macro_img = Image.fromarray(np.clip(macro, 0, 255).astype(np.uint8), "RGB")
+macro_img.save(ROOT / "Assets" / "Textures" / "Generated" / "macro.png")
+
+
+def srgb_to_linear(c):
+    c = c / 255.0
+    return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+
+
+# linear average colour of each ground texture, so the shader can match the photo's colour up close
+layer_avg = []
+for name in ("lawn", "meadow", "forest_floor", "sand"):
+    t = np.asarray(Image.open(ROOT / "Assets" / "Textures" / "Ground" / f"{name}.jpg").convert("RGB").resize((256, 256), Image.BOX), np.float32)
+    layer_avg += [round(float(v), 5) for v in srgb_to_linear(t).reshape(-1, 3).mean(0)]
 
 # ---------- trees ----------
 SPECIES = ["oak", "maple", "birch", "pine"]
@@ -259,7 +318,10 @@ clump = ndimage.gaussian_filter(rng.standard_normal((MH // 16 + 1, MW // 16 + 1)
 clump = (clump - clump.mean()) / clump.std()
 cz = np.clip(((D - zs) / (MPP * 16)).astype(int), 0, clump.shape[0] - 1); cx = np.clip((xs / (MPP * 16)).astype(int), 0, clump.shape[1] - 1)
 dens = dens * np.clip(0.75 + 0.35 * clump[cz, cx], 0.15, 1.2)
-dens = np.where(mask_at(wood_mask, xs, zs), np.maximum(dens, 0.95), dens)   # mapped woods are wooded
+# where the trees stand comes from the photo's canopy; NLCD only sets the species mix
+can = mask_at(canopy2, xs, zs)
+dens = np.clip((can - 0.12) / 0.55, 0, 1) * np.clip(0.9 + 0.15 * clump[cz, cx], 0.7, 1.1)
+dens = np.where(mask_at(wood_mask, xs, zs), np.maximum(dens, 0.5 * np.clip(can * 2, 0, 1)), dens)
 hz = height(xs, zs)
 slope = np.hypot(height(xs + 3, zs) - height(xs - 3, zs), height(xs, zs + 3) - height(xs, zs - 3)) / 6
 keep = (rng.random(len(xs)) < dens) & ~mask_at(water_buffer, xs, zs) & ~mask_at(clear_mask, xs, zs) & ~mask_at(feature_clear, xs, zs) & (slope < 0.75)
@@ -311,8 +373,21 @@ with open(OUT / "lakes.bytes", "wb") as f:
     f.write(struct.pack("<4sI", b"LAKE", len(lakes)))
     for level, pts in lakes:
         f.write(struct.pack("<fI", level, len(pts))); f.write(pts.astype("<f4").tobytes())
+# runtime ground classes from the photo at 6 m, in NLCD codes so the grass field's rules still apply:
+# 41 woods, 71 meadow, 21 lawn, 31 bare sand or pavement; NLCD wetlands (90, 95) kept where the photo shows plants
+LCW, LCH = int(round(W / 6)), int(round(D / 6))
+pf6 = photo_features(LCW, LCH)
+c6 = np.stack(photo_cover(pf6), -1)
+c6 = np.stack([c6[..., 0], c6[..., 1], c6[..., 2], c6[..., 3] + c6[..., 4]], -1)
+codes = np.array([41, 21, 71, 31], np.uint8)[c6.argmax(-1)]
+# dry bright grass reads 'bare' from the air; away from the shore and pavement it still grows grass
+shore6 = np.asarray(Image.fromarray(ndimage.binary_dilation(water_mask, iterations=30).astype(np.uint8) * 255).resize((LCW, LCH), Image.NEAREST)) > 0
+codes = np.where((codes == 31) & ~shore6 & (c6[..., 3] > 0) & (pf6["lum"] < 175) & (np.abs(pf6["warm"]) > 14), 71, codes)
+nl6 = np.asarray(Image.fromarray(nlcd.astype(np.uint8)).resize((LCW, LCH), Image.NEAREST))
+codes = np.where(np.isin(nl6, [90, 95]) & (codes != 31), nl6, codes)
+codes = np.where(np.asarray(Image.fromarray(water_mask.astype(np.uint8) * 255).resize((LCW, LCH), Image.NEAREST)) > 0, 11, codes)
 with open(OUT / "landcover.bytes", "wb") as f:
-    f.write(struct.pack("<4sHH", b"NLCD", NL_W, NL_H)); f.write(nlcd.astype(np.uint8).tobytes())
+    f.write(struct.pack("<4sHH", b"NLCD", LCW, LCH)); f.write(codes.astype(np.uint8).tobytes())
 
 # mapped features for the runtime: a 4 m mask (0 none, 1 mown, 2 sand, 3 parking, 4 building) and the outlines
 fmask = feature_mask[::2, ::2]
@@ -616,7 +691,8 @@ world = {
     "styleCounts": {str(k): v for k, v in style_counts.items()},
     "mapWidth": MAP_W, "mapHeight": MAP_H, "mapMetersPerPixel": MAP_MPP,
     "speciesCounts": counts,
-    "sources": [dem_meta["source"], osm["source"], "USGS Annual NLCD 2024 land cover (Esri image service)"],
+    "sources": [dem_meta["source"], osm["source"], "USDA NAIP aerial photo via USGS The National Map (public domain)", "USGS Annual NLCD 2024 land cover (Esri image service)"],
+    "layerAverages": layer_avg,
 }
 (OUT / "world.json").write_text(json.dumps(world, indent=1))
 on_feature = int(np.count_nonzero(mask_at(feature_mask, xs, zs)))
